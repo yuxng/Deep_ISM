@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import random
 import bpy
 import bpy_extras
 from mathutils import Matrix, Vector
@@ -14,6 +15,67 @@ import scipy.io
 RENDERING_PATH = './'
 MAX_CAMERA_DIST = 2
 MAX_DEPTH = 1e8
+g_shape_synset_name_pairs = [('02691156', 'aeroplane'),
+                             ('02747177', 'ashtray'),
+                             ('02773838', 'backpack'),
+                             ('02801938', 'basket'),
+                             ('02808440', 'tub'),  # bathtub
+                             ('02818832', 'bed'),
+                             ('02828884', 'bench'),
+                             ('02834778', 'bicycle'),
+                             ('02843684', 'mailbox'), # missing in objectnet3d, birdhouse, use view distribution of mailbox
+                             ('02858304', 'boat'),
+                             ('02871439', 'bookshelf'),
+                             ('02876657', 'bottle'),
+                             ('02880940', 'plate'), # missing in objectnet3d, bowl, use view distribution of plate
+                             ('02924116', 'bus'),
+                             ('02933112', 'cabinet'),
+                             ('02942699', 'camera'),
+                             ('02946921', 'can'),
+                             ('02954340', 'cap'),
+                             ('02958343', 'car'),
+                             ('02992529', 'cellphone'),
+                             ('03001627', 'chair'),
+                             ('03046257', 'clock'),
+                             ('03085013', 'keyboard'),
+                             ('03207941', 'dishwasher'),
+                             ('03211117', 'tvmonitor'),
+                             ('03261776', 'headphone'),
+                             ('03325088', 'faucet'),
+                             ('03337140', 'filing_cabinet'),
+                             ('03467517', 'guitar'),
+                             ('03513137', 'helmet'),
+                             ('03593526', 'jar'),
+                             ('03624134', 'knife'),
+                             ('03636649', 'lamp'),
+                             ('03642806', 'laptop'),
+                             ('03691459', 'speaker'),
+                             ('03710193', 'mailbox'),
+                             ('03759954', 'microphone'),
+                             ('03761084', 'microwave'),
+                             ('03790512', 'motorbike'),
+                             ('03797390', 'cup'),  # missing in objectnet3d, mug, use view distribution of cup
+                             ('03928116', 'piano'),
+                             ('03938244', 'pillow'),
+                             ('03948459', 'rifle'),  # missing in objectnet3d, pistol, use view distribution of rifle
+                             ('03991062', 'pot'),
+                             ('04004475', 'printer'),
+                             ('04074963', 'remote_control'),
+                             ('04090263', 'rifle'),
+                             ('04099429', 'road_pole'),  # missing in objectnet3d, rocket, use view distribution of road_pole
+                             ('04225987', 'skateboard'),
+                             ('04256520', 'sofa'),
+                             ('04330267', 'stove'),
+                             ('04379243', 'diningtable'),  # use view distribution of dining_table
+                             ('04401088', 'telephone'),
+                             ('04460130', 'road_pole'),  # missing in objectnet3d, tower, use view distribution of road_pole
+                             ('04468005', 'train'),
+                             ('04530566', 'washing_machine'),
+                             ('04554684', 'dishwasher')]  # washer, use view distribution of dishwasher
+
+g_shape_synsets = [x[0] for x in g_shape_synset_name_pairs]
+g_shape_names = [x[1] for x in g_shape_synset_name_pairs]
+g_view_distribution_files = dict(zip(g_shape_synsets, [name+'.txt' for name in g_shape_names]))
 
 def camPosToQuaternion(cx, cy, cz):
     camDist = math.sqrt(cx * cx + cy * cy + cz * cz)
@@ -413,7 +475,7 @@ class BlenderRenderer(object):
 
         # project object
         # count = 0
-        # for item in bpy.data.objects:
+        #for item in bpy.data.objects:
         #    print(item.name)
         #    if item.type == 'MESH':
         #        count = count + 1
@@ -433,18 +495,46 @@ class BlenderRenderer(object):
 
 def main():
     '''Test function'''
-    dn = '/var/Projects/ShapeNetCore.v1/02958343/'
-    model_id = [line.strip('\n') for line in open(dn + 'models.txt')]
+
+    shapenet_root = '/var/Projects/ShapeNetCore.v1'
+    view_dists_root = '/var/Projects/Deep_ISM/ObjectNet3D/view_distributions'
+    synset = '02958343'
+    view_num = 1
+
+    # load 3D shape paths
+    dn = os.path.join(shapenet_root, synset)
+    model_id = [line.strip('\n') for line in open(dn + '/models.txt')]
     file_paths = [os.path.join(dn, line, 'model.obj') for line in model_id]
+
+    # load viewpoint distributions
+    filename = os.path.join(view_dists_root, g_view_distribution_files[synset])
+    if not os.path.exists(filename):
+        print('Failed to read view distribution files from %s for synset %s' % 
+              (filename, synset))
+        exit()
+    view_params = open(filename).readlines()
+    view_params = [[float(x) for x in line.strip().split(' ')] for line in view_params]
+
+    # initialize the blender render
     renderer = BlenderRenderer(500, 500)
+
+    # for each 3D shape
     for ind, curr_model_id in enumerate(model_id):
         print('Rendering model %s' % curr_model_id)
-        az, el, depth_ratio = list(
-            *([360, 5, 0.3] * np.random.rand(1, 3) + [0, 25, 0.65]))
-
         renderer.loadModel(file_paths[ind])
-        renderer.setViewpoint(120, 30, 0, 0.7, 25)
-        rendering, alpha = renderer.render()
+
+        # sample viewpoints
+        for i in range(view_num): 
+            index = random.randint(0, len(view_params)-1)
+            azimuth = view_params[index][0]
+            elevation = view_params[index][1]
+            tilt = view_params[index][2]
+
+            # set viewpoint
+            renderer.setViewpoint(azimuth, elevation, tilt, 0.7, 25)
+
+            # rendering
+            rendering, alpha = renderer.render()
 
         renderer.clearModel()
         break
