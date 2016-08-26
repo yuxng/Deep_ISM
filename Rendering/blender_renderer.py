@@ -11,10 +11,13 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import scipy.io
+import pickle
+import png
 
 RENDERING_PATH = './'
 MAX_CAMERA_DIST = 2
 MAX_DEPTH = 1e8
+FACTOR_DEPTH = 10000
 g_shape_synset_name_pairs = [('02691156', 'aeroplane'),
                              ('02747177', 'ashtray'),
                              ('02773838', 'backpack'),
@@ -203,6 +206,24 @@ class BlenderRenderer(object):
         self.result_fn = '%s/render_result_%d.png' % (RENDERING_PATH, os.getpid())
         bpy.context.scene.render.filepath = self.result_fn
 
+        # switch on nodes
+        bpy.context.scene.use_nodes = True
+        tree = bpy.context.scene.node_tree
+        links = tree.links
+  
+        # clear default nodes
+        for n in tree.nodes:
+            tree.nodes.remove(n)
+  
+        # create input render layer node
+        rl = tree.nodes.new('CompositorNodeRLayers')      
+ 
+        # create output node
+        v = tree.nodes.new('CompositorNodeViewer')
+ 
+        # Links
+        links.new(rl.outputs[2], v.inputs[0])  # link Image output to Viewer input
+
         self.render_context = render_context
         self.camera = camera
         self.light = light_1
@@ -210,6 +231,7 @@ class BlenderRenderer(object):
         self._set_lighting()
         self.render_context.resolution_x = viewport_size_x
         self.render_context.resolution_y = viewport_size_y
+        self.pngWriter = png.Writer(viewport_size_x, viewport_size_y, greyscale=True, alpha=False, bitdepth=16)
 
     def _set_lighting(self):
         # Create new lamp datablock
@@ -247,6 +269,11 @@ class BlenderRenderer(object):
         self.camera.rotation_quaternion[1] = q[1]
         self.camera.rotation_quaternion[2] = q[2]
         self.camera.rotation_quaternion[3] = q[3]
+
+        self.azimuth = azimuth
+        self.elevation = altitude
+        self.tilt = yaw
+        self.distance = distance_ratio * MAX_CAMERA_DIST
 
     def setTransparency(self, transparency='SKY'):
         """ transparency is either 'SKY', 'TRANSPARENT'
@@ -358,19 +385,19 @@ class BlenderRenderer(object):
     def compute_projection_matrix(self):
         K = self.compute_intrinsic()
         RT = self.compute_rotation_translation()
-        return K*RT
+        return K*RT, RT, K
 
     # backproject pixels into 3D points
     def backproject(self, depth):
         # compute projection matrix
-        P = self.compute_projection_matrix()
+        P, RT, K = self.compute_projection_matrix()
         P = np.matrix(P)
         Pinv = np.linalg.pinv(P)
 
         # compute the 3D points        
         width = depth.shape[1]
         height = depth.shape[0]
-        points = np.zeros((height, width, 3), dtype=np.float32)
+        points = np.zeros((height, width, 3), dtype=np.float64)
 
         # camera location
         C = self.camera.location
@@ -379,7 +406,7 @@ class BlenderRenderer(object):
 
         # construct the 2D points matrix
         x, y = np.meshgrid(np.arange(width), np.arange(height))
-        ones = np.ones((height, width), dtype=np.float32)
+        ones = np.ones((height, width), dtype=np.float64)
         x2d = np.stack((x, y, ones), axis=2).reshape(width*height, 3)
 
         # backprojection
@@ -424,7 +451,7 @@ class BlenderRenderer(object):
 
         return points
             
-    def render(self, return_image=True,
+    def render(self, return_depth=True,
                image_path=os.path.join(RENDERING_PATH, 'tmp.png')):
         '''
         Render the object
@@ -432,24 +459,6 @@ class BlenderRenderer(object):
         if not self.model_loaded:
             print('Model not loaded.')
             return
-
-        # switch on nodes
-        bpy.context.scene.use_nodes = True
-        tree = bpy.context.scene.node_tree
-        links = tree.links
-  
-        # clear default nodes
-        for n in tree.nodes:
-            tree.nodes.remove(n)
-  
-        # create input render layer node
-        rl = tree.nodes.new('CompositorNodeRLayers')      
- 
-        # create output node
-        v = tree.nodes.new('CompositorNodeViewer')
- 
-        # Links
-        links.new(rl.outputs[2], v.inputs[0])  # link Image output to Viewer input
 
         self.result_fn = image_path
         bpy.context.scene.render.filepath = image_path
@@ -464,14 +473,23 @@ class BlenderRenderer(object):
         height = bpy.data.images['Viewer Node'].size[1]
         depth = depth.reshape((height, width, 4))
         depth = depth[::-1,:,0]
+        ind = np.where(depth > MAX_DEPTH)
+        depth[ind] = 0
+
+        # convert depth map
+        depth = depth * FACTOR_DEPTH
+        depth = depth.astype(np.uint16)
+
         print(depth.shape, depth.max(), depth.min())
  
         # compute 3D points
-        points = self.backproject(depth)
-
-        data = {'depth': depth, 'points': points}
-        scipy.io.savemat('data.mat', data)
+        # points = self.backproject(depth)
+        # data = {'depth': depth}
+        # scipy.io.savemat('data.mat', data)
         # plt.imshow(points)
+        # with open('data.pkl', 'wb') as fid:
+        #    pickle.dump(data, fid, pickle.HIGHEST_PROTOCOL)
+
 
         # project object
         # count = 0
@@ -488,18 +506,38 @@ class BlenderRenderer(object):
 
         # plt.show()
 
-        if return_image:
-            im = np.array(Image.open(self.result_fn))  # read the image
-            # Last channel is the alpha channel (transparency)
-            return im[:, :, :3], im[:, :, 3]
+        if return_depth:
+            return depth
+
+    def save_meta_data(self, filename):
+        P, RT, K = self.compute_projection_matrix()
+
+        meta_data = {'projection_matrix' : P,
+                     'rotation_translation_matrix': RT,
+                     'intrinsic_matrix': K,
+                     'azimuth': self.azimuth,
+                     'elevation': self.elevation,
+                     'tilt': self.tilt,
+                     'distance': self.distance,
+                     'viewport_size_x': self.render_context.resolution_x,
+                     'viewport_size_y': self.render_context.resolution_y,
+                     'camera_location': self.camera.location,
+                     'factor_depth': FACTOR_DEPTH}
+
+        scipy.io.savemat(filename, meta_data)
+
 
 def main():
     '''Test function'''
 
-    shapenet_root = '/var/Projects/ShapeNetCore.v1'
-    view_dists_root = '/var/Projects/Deep_ISM/ObjectNet3D/view_distributions'
     synset = '02958343'
     view_num = 1
+
+    shapenet_root = '/var/Projects/ShapeNetCore.v1'
+    view_dists_root = '/var/Projects/Deep_ISM/ObjectNet3D/view_distributions'
+    results_root = '/var/Projects/Deep_ISM/Rendering/data/' + synset
+    if not os.path.exists(results_root):
+        os.makedirs(results_root)
 
     # load 3D shape paths
     dn = os.path.join(shapenet_root, synset)
@@ -523,6 +561,11 @@ def main():
         print('Rendering model %s' % curr_model_id)
         renderer.loadModel(file_paths[ind])
 
+        # create output directory
+        dirname = os.path.join(results_root, curr_model_id)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+
         # sample viewpoints
         for i in range(view_num): 
             index = random.randint(0, len(view_params)-1)
@@ -533,8 +576,21 @@ def main():
             # set viewpoint
             renderer.setViewpoint(azimuth, elevation, tilt, 0.7, 25)
 
+            # set transparency
+            renderer.setTransparency('TRANSPARENT')
+
             # rendering
-            rendering, alpha = renderer.render()
+            filename = dirname + '%02d_rgba.png' % i
+            depth = renderer.render(True, filename)
+
+            # save depth image
+            filename = dirname + '%02d_depth.png' % i
+            pngfile = open(filename, 'wb')
+            renderer.pngWriter.write(pngfile, depth)
+
+            # save meta data
+            filename = dirname + '%02d_meta.mat' % i
+            renderer.save_meta_data(filename)
 
         renderer.clearModel()
         break
