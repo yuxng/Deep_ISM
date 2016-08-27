@@ -44,6 +44,12 @@ for i = 3:numel(subdirs)
         subplot(2, 2, 2);
         imshow(I);
         
+        % show the object center
+        center = project(zeros(3, 1), meta_data);
+        hold on;
+        plot(center(1), center(2), 'go');
+        hold off;
+        
         % read depth image
         filename = fullfile(root, synset, model, [id '_depth.png']);
         depth = imread(filename);
@@ -83,6 +89,8 @@ for i = 3:numel(subdirs)
         subplot(2, 2, 4);
         hold on;
         plot3(points(y, x, 1), points(y, x, 3), points(y, x, 2), 'ro', 'LineWidth', 2);
-        hold off;        
+        hold off;
+        
+        pause;
     end
 end

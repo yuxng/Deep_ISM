@@ -7,9 +7,6 @@ import bpy_extras
 from mathutils import Matrix, Vector
 import math
 import numpy as np
-from PIL import Image
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import scipy.io
 import pickle
 import png
@@ -235,10 +232,10 @@ class BlenderRenderer(object):
 
     def _set_lighting(self):
         # Create new lamp datablock
-        light_data = bpy.data.lamps.new(name="New Lamp", type='HEMI')
+        light_data = bpy.data.lamps.new(name="Lamp_2", type='HEMI')
 
         # Create new object with our lamp datablock
-        light_2 = bpy.data.objects.new(name="New Lamp", object_data=light_data)
+        light_2 = bpy.data.objects.new(name="Lamp_2", object_data=light_data)
         bpy.context.scene.objects.link(light_2)
 
         # put the light behind the camera. Reduce specular lighting
@@ -282,7 +279,6 @@ class BlenderRenderer(object):
 
     def selectModel(self):
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.object.select_pattern(pattern="RotCenter")
         bpy.ops.object.select_pattern(pattern="Lamp*")
         bpy.ops.object.select_pattern(pattern="Camera")
         bpy.ops.object.select_all(action='INVERT')
@@ -330,9 +326,6 @@ class BlenderRenderer(object):
         K[0][2] = w / 2.
         K[1][2] = h / 2.
         K[2][2] = 1.
-
-        print('Focal length')
-        print(self.camera.data.lens)
 
         return K
 
@@ -431,6 +424,7 @@ class BlenderRenderer(object):
         points[y, x, 1] = X[2,:].reshape(height, width)
         points[y, x, 2] = X[1,:].reshape(height, width)
 
+        # naive way of computing the 3D points
         #for x in range(width):
         #    for y in range(height):
         #        if (depth[y, x] < MAX_DEPTH):
@@ -480,58 +474,34 @@ class BlenderRenderer(object):
         depth = depth * FACTOR_DEPTH
         depth = depth.astype(np.uint16)
 
-        print(depth.shape, depth.max(), depth.min())
- 
-        # compute 3D points
-        # points = self.backproject(depth)
-        # data = {'depth': depth}
-        # scipy.io.savemat('data.mat', data)
-        # plt.imshow(points)
-        # with open('data.pkl', 'wb') as fid:
-        #    pickle.dump(data, fid, pickle.HIGHEST_PROTOCOL)
-
-
-        # project object
-        # count = 0
-        #for item in bpy.data.objects:
-        #    print(item.name)
-        #    if item.type == 'MESH':
-        #        count = count + 1
-        #        for vertex in item.data.vertices:
-        #            x2d = P * Vector((vertex.co[0], vertex.co[2], vertex.co[1], 1))
-        #            x2d = x2d / x2d[2]
-        #            plt.plot(x2d[0], x2d[1], 'ro')
-        #        if count > 1:
-        #            break
-
-        # plt.show()
-
         if return_depth:
             return depth
 
     def save_meta_data(self, filename):
         P, RT, K = self.compute_projection_matrix()
 
-        meta_data = {'projection_matrix' : P,
-                     'rotation_translation_matrix': RT,
-                     'intrinsic_matrix': K,
+        meta_data = {'projection_matrix' : np.array(P),
+                     'rotation_translation_matrix': np.array(RT),
+                     'intrinsic_matrix': np.array(K),
                      'azimuth': self.azimuth,
                      'elevation': self.elevation,
                      'tilt': self.tilt,
                      'distance': self.distance,
                      'viewport_size_x': self.render_context.resolution_x,
                      'viewport_size_y': self.render_context.resolution_y,
-                     'camera_location': self.camera.location,
+                     'camera_location': np.array(self.camera.location),
                      'factor_depth': FACTOR_DEPTH}
 
-        scipy.io.savemat(filename, meta_data)
+        scipy.io.savemat(filename+'.mat', meta_data)
+        with open(filename+'.pkl', 'wb') as fid:
+            pickle.dump(meta_data, fid, pickle.HIGHEST_PROTOCOL)
 
 
 def main():
     '''Test function'''
 
-    synset = '02958343'
-    view_num = 1
+    synset = '03797390'
+    view_num = 10
 
     shapenet_root = '/var/Projects/ShapeNetCore.v1'
     view_dists_root = '/var/Projects/Deep_ISM/ObjectNet3D/view_distributions'
@@ -589,11 +559,10 @@ def main():
             renderer.pngWriter.write(pngfile, depth)
 
             # save meta data
-            filename = dirname + '%02d_meta.mat' % i
+            filename = dirname + '%02d_meta' % i
             renderer.save_meta_data(filename)
 
         renderer.clearModel()
-        break
 
 
 if __name__ == "__main__":
