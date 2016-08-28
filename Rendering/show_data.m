@@ -5,7 +5,7 @@ root = './data';
 shapenet = '/var/Projects/ShapeNetCore.v1';
 
 % synset id
-synset = '02958343';
+synset = '03797390';
 
 % list models
 subdirs = dir(fullfile(root, synset));
