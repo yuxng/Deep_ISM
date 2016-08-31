@@ -8,12 +8,6 @@ input_shape {
   dim: 224
 }
 
-input: "im_info"
-input_shape {
-  dim: 1
-  dim: 3
-}
-
 layer {
   name: "conv1"
   type: "Convolution"
@@ -209,58 +203,28 @@ layer {
   top: "rpn_conv1"
 }
 layer {
-  name: "rpn_cls_score"
+  name: "cls_score"
   type: "Convolution"
   bottom: "rpn_conv1"
-  top: "rpn_cls_score"
+  top: "cls_score"
   convolution_param {
-    num_output: 140   # 2(bg/fg) * 70(anchors)
+    num_output: 2   # num_classes
     kernel_size: 1 pad: 0 stride: 1
   }
 }
 layer {
-  name: "rpn_bbox_pred"
-  type: "Convolution"
-  bottom: "rpn_conv1"
-  top: "rpn_bbox_pred"
-  convolution_param {
-    num_output: 280   # 4 * 70(anchors)
-    kernel_size: 1 pad: 0 stride: 1
-  }
-}
-layer {
-   bottom: "rpn_cls_score"
-   top: "rpn_cls_score_reshape"
-   name: "rpn_cls_score_reshape"
-   type: "Reshape"
-   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
-}
-
-#-----------------------output------------------------
-layer {
-  name: "rpn_cls_prob"
+  name: "cls_prob"
   type: "Softmax"
-  bottom: "rpn_cls_score_reshape"
-  top: "rpn_cls_prob"
+  bottom: "cls_score"
+  top: "cls_prob"
 }
 layer {
-  name: 'rpn_cls_prob_reshape'
-  type: 'Reshape'
-  bottom: 'rpn_cls_prob'
-  top: 'rpn_cls_prob_reshape'
-  reshape_param { shape { dim: 0 dim: 140 dim: -1 dim: 0 } }
-}
-layer {
-  name: 'proposal'
-  type: 'Python'
-  bottom: 'rpn_cls_prob_reshape'
-  bottom: 'rpn_bbox_pred'
-  bottom: 'im_info'
-  top: 'rois'
-  top: 'scores'
-  python_param {
-    module: 'rpn_msr.proposal_layer'
-    layer: 'ProposalLayer'
-    param_str: "'feat_stride': 16"
+  name: "center_pred"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "center_pred"
+  convolution_param {
+    num_output: 2     # voting vector
+    kernel_size: 1 pad: 0 stride: 1
   }
 }
