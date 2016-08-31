@@ -27,7 +27,7 @@ def get_minibatch(roidb, num_classes):
     label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb)
 
     # For debug visualizations
-    # _vis_minibatch(im_blob, rois_blob, labels_blob, sublabels_blob)
+    # _vis_minibatch(im_blob, label_blob, target_blob)
 
     blobs = {'data': im_blob,
              'labels': label_blob,
@@ -142,30 +142,38 @@ def _get_label_blob(roidb):
         index = np.where(blob_cls_rescale[i,0,:,:] > 0)
         for j in xrange(blob_target.shape[1]):
             blob_target_rescale[i,j,:,:] = cv2.resize(blob_target[i,j,:,:], dsize=(int(height), int(width)), interpolation=cv2.INTER_NEAREST)
-            blob_inside_weights[i,j,index] = 1
-            blob_outside_weights[i,j,index] = 1
+            blob_inside_weights[i,j,index] = 1.0
+            blob_outside_weights[i,j,index] = 1.0 / (height * width)
 
     return blob_cls_rescale, blob_target_rescale, blob_inside_weights, blob_outside_weights
 
 
-def _vis_minibatch(im_blob, rois_blob, labels_blob, sublabels_blob):
+def _vis_minibatch(im_blob, label_blob, target_blob):
     """Visualize a mini-batch for debugging."""
     import matplotlib.pyplot as plt
-    for i in xrange(rois_blob.shape[0]):
-        rois = rois_blob[i, :]
-        im_ind = rois[0]
-        roi = rois[2:]
-        im = im_blob[im_ind, :, :, :].transpose((1, 2, 0)).copy()
+    for i in xrange(im_blob.shape[0]):
+        im = im_blob[i, :, :, :].transpose((1, 2, 0)).copy()
         im += cfg.PIXEL_MEANS
         im = im[:, :, (2, 1, 0)]
         im = im.astype(np.uint8)
-        cls = labels_blob[i]
-        subcls = sublabels_blob[i]
+        # show image
+        plt.subplot(1, 3, 1)
         plt.imshow(im)
-        print 'class: ', cls, ' subclass: ', subcls
-        plt.gca().add_patch(
-            plt.Rectangle((roi[0], roi[1]), roi[2] - roi[0],
-                          roi[3] - roi[1], fill=False,
-                          edgecolor='r', linewidth=3)
-            )
+
+        # show label
+        label = label_blob[i, 0, :, :]
+        print(label.shape, label.max(), label.min())
+        plt.subplot(1, 3, 2)
+        plt.imshow(label)
+
+        # show the target
+        plt.subplot(1, 3, 3)
+        plt.imshow(label)
+        vx = target_blob[i, 0, :, :]
+        vy = target_blob[i, 1, :, :]
+        for x in xrange(vx.shape[1]):
+            for y in xrange(vx.shape[0]):
+                if vx[y, x] != 0 and vy[y, x] != 0:
+                    plt.gca().annotate("", xy=(x + vx[y, x], y + vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
+                        arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
         plt.show()
