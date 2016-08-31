@@ -1,8 +1,8 @@
 # --------------------------------------------------------
-# Fast R-CNN
-# Copyright (c) 2015 Microsoft
+# Deep ISM
+# Copyright (c) 2016
 # Licensed under The MIT License [see LICENSE for details]
-# Written by Ross Girshick
+# Written by Yu Xiang
 # --------------------------------------------------------
 
 """Compute minibatch blobs for training a Fast R-CNN network."""
@@ -21,10 +21,11 @@ def get_minibatch(roidb, num_classes):
         format(num_images, cfg.TRAIN.BATCH_SIZE)
 
     # Get the input image blob, formatted for caffe
-    im_blob = _get_image_blob(roidb)
+    random_scale_inds = npr.randint(0, high=len(cfg.TRAIN.SCALES_BASE), size=num_images)
+    im_blob, im_scales = _get_image_blob(roidb, random_scale_inds)
 
     # build the box information blob
-    label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb)
+    label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb, im_scales)
 
     # For debug visualizations
     # _vis_minibatch(im_blob, label_blob, target_blob)
@@ -37,14 +38,14 @@ def get_minibatch(roidb, num_classes):
 
     return blobs
 
-def _get_image_blob(roidb):
-    """Builds an input blob from the images in the roidb at the different scales.
+def _get_image_blob(roidb, scale_inds):
+    """Builds an input blob from the images in the roidb at the specified
+    scales.
     """
     num_images = len(roidb)
     processed_ims = []
-
+    im_scales = []
     for i in xrange(num_images):
-        # read image
         im = cv2.imread(roidb[i]['image'])
         if roidb[i]['flipped']:
             im = im[:, ::-1, :]
@@ -52,19 +53,19 @@ def _get_image_blob(roidb):
         im_orig = im.astype(np.float32, copy=True)
         im_orig -= cfg.PIXEL_MEANS
 
-        # build image pyramid
-        for im_scale in cfg.TRAIN.SCALES_BASE:
-            im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale,
-                        interpolation=cv2.INTER_LINEAR)
+        im_scale = cfg.TRAIN.SCALES_BASE[scale_inds[i]]
+        im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
 
-            processed_ims.append(im)
+        im_scales.append(im_scale)
+        processed_ims.append(im)
 
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims, 3)
 
-    return blob
+    return blob, im_scales
 
-def _get_label_blob(roidb):
+
+def _get_label_blob(roidb, im_scales):
     """ build the label blob """
 
     num_images = len(roidb)
@@ -105,15 +106,12 @@ def _get_label_blob(roidb):
             im_target[y, x, 0] = R[0,:]
             im_target[y, x, 1] = R[1,:]
 
-        # build image pyramid
-        for im_scale in cfg.TRAIN.SCALES_BASE:
-            im = cv2.resize(im_cls, None, None, fx=im_scale, fy=im_scale,
-                        interpolation=cv2.INTER_NEAREST)
-            processed_ims_cls.append(im)
-
-            im = cv2.resize(im_target, None, None, fx=im_scale, fy=im_scale,
-                        interpolation=cv2.INTER_NEAREST)
-            processed_ims_target.append(im)
+        # rescale image
+        im_scale = im_scales[i]
+        im = cv2.resize(im_cls, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_NEAREST)
+        processed_ims_cls.append(im)
+        im = cv2.resize(im_target, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_NEAREST)
+        processed_ims_target.append(im)
 
     # Create a blob to hold the input images
     blob_cls = im_list_to_blob(processed_ims_cls, 1)

@@ -14,7 +14,6 @@ import numpy as np
 import cv2
 import caffe
 import cPickle
-import heapq
 from utils.blob import im_list_to_blob
 import os
 import math
@@ -122,8 +121,19 @@ def test_net(net, imdb):
     # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
 
+    # perm = np.random.permutation(np.arange(num_images))
+
     for i in xrange(num_images):
         im = cv2.imread(imdb.image_path_at(i))
+
+        # shift
+        # rows = im.shape[0]
+        # cols = im.shape[1]
+        # M = np.float32([[1,0,100],[0,1,50]])
+        # im = cv2.warpAffine(im,M,(cols,rows))
+
+        # rescaling
+        # im = cv2.resize(im, None, None, fx=0.4, fy=0.4, interpolation=cv2.INTER_LINEAR)
 
         _t['im_detect'].tic()
         cls_prob, center_pred = im_detect(net, im, imdb.num_classes)
