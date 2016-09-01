@@ -77,6 +77,15 @@ g_shape_synsets = [x[0] for x in g_shape_synset_name_pairs]
 g_shape_names = [x[1] for x in g_shape_synset_name_pairs]
 g_view_distribution_files = dict(zip(g_shape_synsets, [name+'.txt' for name in g_shape_names]))
 
+g_syn_light_num_lowbound = 1
+g_syn_light_num_highbound = 6
+g_syn_light_dist_lowbound = 8
+g_syn_light_dist_highbound = 12
+g_syn_light_energy_mean = 2
+g_syn_light_energy_std = 1
+g_syn_light_environment_energy_lowbound = 0
+g_syn_light_environment_energy_highbound = 1
+
 def camPosToQuaternion(cx, cy, cz):
     camDist = math.sqrt(cx * cx + cy * cy + cz * cz)
     cx = cx / camDist
@@ -188,8 +197,6 @@ class BlenderRenderer(object):
         render_context = bpy.context.scene.render
         world  = bpy.context.scene.world
         camera = bpy.data.objects['Camera']
-        light_1  = bpy.data.objects['Lamp']
-        light_1.data.type = 'HEMI'
 
         # set the camera postion and orientation so that it is in
         # the front of the object
@@ -223,34 +230,34 @@ class BlenderRenderer(object):
 
         self.render_context = render_context
         self.camera = camera
-        self.light = light_1
         self.model_loaded = False
-        self._set_lighting()
         self.render_context.resolution_x = viewport_size_x
         self.render_context.resolution_y = viewport_size_y
         self.pngWriter = png.Writer(viewport_size_x, viewport_size_y, greyscale=True, alpha=False, bitdepth=16)
 
-    def _set_lighting(self):
-        # Create new lamp datablock
-        light_data = bpy.data.lamps.new(name="Lamp_2", type='HEMI')
+    def _set_lighting(self, azimuth, elevation):
+        # clear default lights
+        bpy.ops.object.select_by_type(type='LAMP')
+        bpy.ops.object.delete(use_global=False)
 
-        # Create new object with our lamp datablock
-        light_2 = bpy.data.objects.new(name="Lamp_2", object_data=light_data)
-        bpy.context.scene.objects.link(light_2)
+        # set environment lighting
+        bpy.context.scene.world.light_settings.use_environment_light = True
+        bpy.context.scene.world.light_settings.environment_energy = np.random.uniform(g_syn_light_environment_energy_lowbound, g_syn_light_environment_energy_highbound)
+        bpy.context.scene.world.light_settings.environment_color = 'PLAIN'
 
-        # put the light behind the camera. Reduce specular lighting
-        self.light.location       = (0, -2, 2)
-        self.light.rotation_mode  = 'ZXY'
-        self.light.rotation_euler = (math.radians(45), 0, math.radians(90))
-        self.light.data.energy = 0.7
-
-        light_2.location       = (0, 2, 2)
-        light_2.rotation_mode  = 'ZXY'
-        light_2.rotation_euler = (-math.radians(45), 0, math.radians(90))
-        light_2.data.energy = 0.7
+        # set point lights
+        num_light = random.randint(g_syn_light_num_lowbound,g_syn_light_num_highbound)
+        print(num_light)
+        for i in range(num_light):
+            light_azimuth_deg = np.random.uniform(azimuth-90, azimuth+90)
+            light_elevation_deg  = np.random.uniform(elevation-45, elevation+45)
+            light_dist = np.random.uniform(g_syn_light_dist_lowbound, g_syn_light_dist_highbound)
+            lx, ly, lz = obj_centened_camera_pos(light_dist, light_azimuth_deg, light_elevation_deg)
+            bpy.ops.object.lamp_add(type='POINT', view_align = False, location=(lx, ly, lz))
+            bpy.data.objects['Point'].data.energy = np.random.normal(g_syn_light_energy_mean, g_syn_light_energy_std)
 
     def setViewpoint(self, azimuth, altitude, yaw, distance_ratio, fov):
-        self.light.location = (distance_ratio * (MAX_CAMERA_DIST + 2), 0, 0)
+        self._set_lighting(azimuth, altitude)
 
         cx, cy, cz = obj_centened_camera_pos(distance_ratio * MAX_CAMERA_DIST, azimuth, altitude)
         q1 = camPosToQuaternion(cx, cy, cz)
@@ -279,7 +286,6 @@ class BlenderRenderer(object):
 
     def selectModel(self):
         bpy.ops.object.select_all(action='DESELECT')
-        bpy.ops.object.select_pattern(pattern="Lamp*")
         bpy.ops.object.select_pattern(pattern="Camera")
         bpy.ops.object.select_all(action='INVERT')
 
