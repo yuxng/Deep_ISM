@@ -530,7 +530,7 @@ def main():
     view_params = [[float(x) for x in line.strip().split(' ')] for line in view_params]
 
     # initialize the blender render
-    renderer = BlenderRenderer(500, 500)
+    renderer = BlenderRenderer(256, 256)
 
     # for each 3D shape
     for ind, curr_model_id in enumerate(model_id):

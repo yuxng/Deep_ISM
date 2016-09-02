@@ -21,8 +21,8 @@ def get_minibatch(roidb, num_classes):
         format(num_images, cfg.TRAIN.BATCH_SIZE)
 
     # Get the input image blob, formatted for caffe
-    random_scale_inds = npr.randint(0, high=len(cfg.TRAIN.SCALES_BASE), size=num_images)
-    im_blob, im_scales = _get_image_blob(roidb, random_scale_inds)
+    random_scale_ind = npr.randint(0, high=len(cfg.TRAIN.SCALES_BASE))
+    im_blob, im_scales = _get_image_blob(roidb, random_scale_ind)
 
     # build the box information blob
     label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb, im_scales)
@@ -38,7 +38,7 @@ def get_minibatch(roidb, num_classes):
 
     return blobs
 
-def _get_image_blob(roidb, scale_inds):
+def _get_image_blob(roidb, scale_ind):
     """Builds an input blob from the images in the roidb at the specified
     scales.
     """
@@ -53,7 +53,7 @@ def _get_image_blob(roidb, scale_inds):
         im_orig = im.astype(np.float32, copy=True)
         im_orig -= cfg.PIXEL_MEANS
 
-        im_scale = cfg.TRAIN.SCALES_BASE[scale_inds[i]]
+        im_scale = cfg.TRAIN.SCALES_BASE[scale_ind]
         im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
 
         im_scales.append(im_scale)
@@ -171,7 +171,7 @@ def _vis_minibatch(im_blob, label_blob, target_blob):
         vy = target_blob[i, 1, :, :]
         for x in xrange(vx.shape[1]):
             for y in xrange(vx.shape[0]):
-                if vx[y, x] != 0 and vy[y, x] != 0:
+                if vx[y, x] != 0 or vy[y, x] != 0:
                     plt.gca().annotate("", xy=(x + vx[y, x], y + vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
                         arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
         plt.show()

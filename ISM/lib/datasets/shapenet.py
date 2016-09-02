@@ -98,7 +98,7 @@ class shapenet(datasets.imdb):
         Construct an image path from the image's "index" identifier.
         """
 
-        image_path = os.path.join(self._data_path, index + '_rgba' + self._image_ext)
+        image_path = os.path.join(self._data_path, index + '_bkgd' + self._image_ext)
         assert os.path.exists(image_path), \
                 'Path does not exist: {}'.format(image_path)
         return image_path

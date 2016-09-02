@@ -1,7 +1,7 @@
 EXP_DIR: shapenet
 TRAIN:
-  SCALES_BASE: !!python/tuple [0.25, 0.5, 1.0, 1.5, 2.0]
-  IMS_PER_BATCH: 1
+  SCALES_BASE: !!python/tuple [0.5, 1.0, 1.5, 2.0]
+  IMS_PER_BATCH: 2
   SNAPSHOT_INFIX: shapenet
   SNAPSHOT_ITERS: 10000
 TEST:
