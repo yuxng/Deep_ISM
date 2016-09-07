@@ -98,7 +98,7 @@ class shapenet(datasets.imdb):
         Construct an image path from the image's "index" identifier.
         """
 
-        image_path = os.path.join(self._data_path, index + '_bkgd' + self._image_ext)
+        image_path = os.path.join(self._data_path, index + '_rgba' + self._image_ext)
         assert os.path.exists(image_path), \
                 'Path does not exist: {}'.format(image_path)
         return image_path
@@ -112,6 +112,16 @@ class shapenet(datasets.imdb):
         assert os.path.exists(label_path), \
                 'Path does not exist: {}'.format(label_path)
         return label_path
+
+    def metadata_path_from_index(self, index):
+        """
+        Construct an metadata path from the image's "index" identifier.
+        """
+
+        metadata_path = os.path.join(self._data_path, index + '_meta.mat')
+        assert os.path.exists(metadata_path), \
+                'Path does not exist: {}'.format(metadata_path)
+        return metadata_path
 
     def _load_image_set_index(self):
         """
@@ -166,6 +176,9 @@ class shapenet(datasets.imdb):
         # label path
         label_path = self.label_path_from_index(index)
 
+        # metadata path
+        metadata_path = self.metadata_path_from_index(index)
+
         # the first 8 digits in index
         synset = index[:8]
         cls = g_shape_synset_name_mapping[synset]
@@ -173,6 +186,7 @@ class shapenet(datasets.imdb):
         
         return {'image': image_path,
                 'label': label_path,
+                'meta_data': metadata_path,
                 'gt_class': gt_class,
                 'flipped' : False}
 

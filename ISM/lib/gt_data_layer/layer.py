@@ -70,13 +70,13 @@ class GtDataLayer(caffe.Layer):
         top[1].reshape(1, 1, 17, 17)
 
         # regression target blob
-        top[2].reshape(1, 2, 17, 17)
+        top[2].reshape(1, 4, 17, 17)
 
         # inside weights blob
-        top[3].reshape(1, 2, 17, 17)
+        top[3].reshape(1, 4, 17, 17)
 
         # outside weights blob
-        top[4].reshape(1, 2, 17, 17)
+        top[4].reshape(1, 4, 17, 17)
             
     def forward(self, bottom, top):
         """Get blobs and copy them into this layer's top blob vector."""

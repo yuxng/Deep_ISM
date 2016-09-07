@@ -9,10 +9,12 @@ synset = '03797390';
 
 % list models
 subdirs = dir(fullfile(root, synset));
+num = numel(subdirs) - 2;
+index = randperm(num);
 
 % for each model
-for i = 3:numel(subdirs)
-    model = subdirs(i).name;
+for i = index
+    model = subdirs(i+2).name;
     
     % load shapenet model
     filename = fullfile(shapenet, synset, model, 'model.obj');
@@ -92,5 +94,6 @@ for i = 3:numel(subdirs)
         hold off;
         
         pause;
+        break;
     end
 end

@@ -499,8 +499,6 @@ class BlenderRenderer(object):
                      'factor_depth': FACTOR_DEPTH}
 
         scipy.io.savemat(filename+'.mat', meta_data)
-        with open(filename+'.pkl', 'wb') as fid:
-            pickle.dump(meta_data, fid, pickle.HIGHEST_PROTOCOL)
 
 
 def main():

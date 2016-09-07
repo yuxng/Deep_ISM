@@ -78,20 +78,23 @@ def im_detect(net, im, num_classes):
 def vis_detections(im, cls_prob, center_pred):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
     im = im[:, :, (2, 1, 0)]
-    plt.cla()
+    fig = plt.figure()
 
     # show image
-    plt.subplot(1, 3, 1)
+    fig.add_subplot(231)
     plt.imshow(im)
 
     # show class label
     label = cls_prob[0, 1, :, :]
-    plt.subplot(1, 3, 2)
+    fig.add_subplot(232)
     plt.imshow(label)
 
     # show the target
-    plt.subplot(1, 3, 3)
+    # ax = fig.add_subplot(133, projection='3d')
+    # ax.scatter(center_pred[0, 0, :, :], center_pred[0, 2, :, :], center_pred[0, 1, :, :], c='r', marker='o')
+    fig.add_subplot(233)
     plt.imshow(label)
     vx = center_pred[0, 0, :, :]
     vy = center_pred[0, 1, :, :]
@@ -100,6 +103,17 @@ def vis_detections(im, cls_prob, center_pred):
             if vx[y, x] != 0 and vy[y, x] != 0:
                 plt.gca().annotate("", xy=(x + vx[y, x], y + vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
                     arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
+
+    # show the azimuth image
+    azimuth = center_pred[0, 2, :, :]
+    fig.add_subplot(234)
+    plt.imshow(azimuth)
+
+    # show the elevation image
+    elevation = center_pred[0, 3, :, :]
+    fig.add_subplot(235)
+    plt.imshow(elevation)
+
     plt.show()
 
 
@@ -121,19 +135,20 @@ def test_net(net, imdb):
     # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
 
-    # perm = np.random.permutation(np.arange(num_images))
+    perm = np.random.permutation(np.arange(num_images))
 
-    for i in xrange(num_images):
+    # for i in xrange(num_images):
+    for i in perm:
         im = cv2.imread(imdb.image_path_at(i))
 
         # shift
         # rows = im.shape[0]
         # cols = im.shape[1]
-        # M = np.float32([[1,0,100],[0,1,50]])
+        # M = np.float32([[1,0,50],[0,1,25]])
         # im = cv2.warpAffine(im,M,(cols,rows))
 
         # rescaling
-        # im = cv2.resize(im, None, None, fx=0.4, fy=0.4, interpolation=cv2.INTER_LINEAR)
+        # im = cv2.resize(im, None, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_LINEAR)
 
         _t['im_detect'].tic()
         cls_prob, center_pred = im_detect(net, im, imdb.num_classes)

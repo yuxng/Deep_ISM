@@ -4,5 +4,6 @@ TRAIN:
   IMS_PER_BATCH: 2
   SNAPSHOT_INFIX: shapenet
   SNAPSHOT_ITERS: 10000
+  USE_FLIPPED: False
 TEST:
-  SCALES_BASE: !!python/tuple [1.0]
+  SCALES_BASE: !!python/tuple [1.5]

@@ -224,7 +224,7 @@ layer {
   bottom: "rpn_conv1"
   top: "center_pred"
   convolution_param {
-    num_output: 2     # voting vector
+    num_output: 4     # voting vector
     kernel_size: 1 pad: 0 stride: 1
   }
 }
