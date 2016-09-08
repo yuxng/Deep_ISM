@@ -135,65 +135,6 @@ def backproject(im_depth, meta_data):
 
     return points
 
-# backproject pixels into 3D points
-def backproject_camera(im_depth, meta_data):
-
-    depth = im_depth.astype(np.float32, copy=True) / meta_data['factor_depth']
-
-    # get intrinsic matrix
-    K = meta_data['intrinsic_matrix']
-    K = np.matrix(K)
-    Kinv = np.linalg.inv(K)
-
-    # compute the 3D points        
-    width = depth.shape[1]
-    height = depth.shape[0]
-    points = np.zeros((height, width, 3), dtype=np.float32)
-
-    # construct the 2D points matrix
-    x, y = np.meshgrid(np.arange(width), np.arange(height))
-    ones = np.ones((height, width), dtype=np.float32)
-    x2d = np.stack((x, y, ones), axis=2).reshape(width*height, 3)
-
-    # backprojection
-    R = Kinv * x2d.transpose()
-
-    # compute the norm
-    N = np.linalg.norm(R, axis=0)
-        
-    # normalization
-    R = np.divide(R, np.tile(N, (3,1)))
-
-    # compute the 3D points
-    X = np.multiply(np.tile(depth.reshape(1, width*height), (3, 1)), R)
-    points[y, x, 0] = X[0,:].reshape(height, width)
-    points[y, x, 1] = X[1,:].reshape(height, width)
-    points[y, x, 2] = X[2,:].reshape(height, width)
-
-    # mask
-    index = np.where(im_depth == 0)
-    points[index[0], index[1], :] = 0
-
-    # compute object center
-    RT = np.matrix(meta_data['rotation_translation_matrix'])
-    center = np.zeros((4,1), dtype=np.float32)
-    center[3] = 1
-    C = RT * center
-
-    # show the 3D points and the camera location
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points[:,:,0], points[:,:,1], points[:,:,2], c='r', marker='o')
-    ax.scatter(C[0], C[1], C[2], c='g', marker='o')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_aspect('equal')
-    plt.show()
-
-    return points
 
 # compute the voting label image in 2D
 def vote_centers(im_mask):

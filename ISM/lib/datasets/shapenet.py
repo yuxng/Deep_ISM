@@ -103,6 +103,12 @@ class shapenet(datasets.imdb):
                 'Path does not exist: {}'.format(image_path)
         return image_path
 
+    def label_path_at(self, i):
+        """
+        Return the absolute path to image i in the image sequence.
+        """
+        return self.label_path_from_index(self.image_index[i])
+
     def label_path_from_index(self, index):
         """
         Construct an label path from the image's "index" identifier.
@@ -112,6 +118,12 @@ class shapenet(datasets.imdb):
         assert os.path.exists(label_path), \
                 'Path does not exist: {}'.format(label_path)
         return label_path
+
+    def metadata_path_at(self, i):
+        """
+        Return the absolute path to metadata i in the image sequence.
+        """
+        return self.metadata_path_from_index(self.image_index[i])
 
     def metadata_path_from_index(self, index):
         """

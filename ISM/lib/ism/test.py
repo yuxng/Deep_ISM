@@ -17,6 +17,8 @@ import cPickle
 from utils.blob import im_list_to_blob
 import os
 import math
+import scipy.io
+from scipy.optimize import minimize
 
 def _get_image_blob(im):
     """Converts an image into a network input.
@@ -75,7 +77,126 @@ def im_detect(net, im, num_classes):
     return cls_prob, center_pred
 
 
-def vis_detections(im, cls_prob, center_pred):
+# backproject pixels into 3D points
+def backproject_camera(im_depth, meta_data):
+
+    depth = im_depth.astype(np.float32, copy=True) / meta_data['factor_depth']
+
+    # get intrinsic matrix
+    K = meta_data['intrinsic_matrix']
+    K = np.matrix(K)
+    Kinv = np.linalg.inv(K)
+
+    # compute the 3D points        
+    width = depth.shape[1]
+    height = depth.shape[0]
+    points = np.zeros((height, width, 3), dtype=np.float32)
+
+    # construct the 2D points matrix
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    ones = np.ones((height, width), dtype=np.float32)
+    x2d = np.stack((x, y, ones), axis=2).reshape(width*height, 3)
+
+    # backprojection
+    R = Kinv * x2d.transpose()
+
+    # compute the norm
+    N = np.linalg.norm(R, axis=0)
+        
+    # normalization
+    R = np.divide(R, np.tile(N, (3,1)))
+
+    # compute the 3D points
+    X = np.multiply(np.tile(depth.reshape(1, width*height), (3, 1)), R)
+    points[y, x, 0] = X[0,:].reshape(height, width)
+    points[y, x, 1] = X[1,:].reshape(height, width)
+    points[y, x, 2] = X[2,:].reshape(height, width)
+
+    # mask
+    index = np.where(im_depth == 0)
+    points[index[0], index[1], :] = 0
+
+    return points
+
+
+def loss_pose(x, points, im_depth, center_pred):
+    """ loss function for pose esimation """
+    rx = x[0]
+    ry = x[1]
+    rz = x[2]
+    C = x[3:6].reshape((3,1))
+
+    # construct rotation matrix
+    Rx = np.matrix([[1, 0, 0], [0, math.cos(rx), -math.sin(rx)], [0, math.sin(rx), math.cos(rx)]])
+    Ry = np.matrix([[math.cos(ry), 0, math.sin(ry)], [0, 1, 0], [-math.sin(ry), 0, math.cos(ry)]])
+    Rz = np.matrix([[math.cos(rz), -math.sin(rz), 0], [math.sin(rz), math.cos(rz), 0], [0, 0, 1]])
+    R = Rz * Ry * Rx
+
+    # transform the points
+    index = np.where(im_depth > 0)
+    x3d = points[index[0], index[1], :].transpose()
+    num = x3d.shape[1]
+    Cmat = np.tile(C, (1, num))
+    X = R * (x3d - Cmat)
+
+    # compute the azimuth and elevation of each 3D point
+    r = np.linalg.norm(X, axis=0)
+    elevation = (np.pi/2 - np.arccos(np.divide(X[2,:], r))) / np.pi
+    azimuth = np.arctan2(X[1,:], X[0,:]) / np.pi
+
+    # get the predicted azimuth and elevation
+    azimuth_pred = center_pred[0, 2, index[0], index[1]]
+    elevation_pred = center_pred[0, 3, index[0], index[1]]
+
+    # compute the loss
+    loss = (np.mean(np.power(azimuth - azimuth_pred, 2)) + np.mean(np.power(elevation - elevation_pred, 2))) / 2
+    return loss
+
+
+def pose_estimate(im_depth, meta_data, center_pred):
+    """ estimate the pose of object from network predication """
+    # compute 3D points in camera coordinate framework
+    points = backproject_camera(im_depth, meta_data)
+
+    # rescale the 3D point map
+    height = center_pred.shape[2]
+    width = center_pred.shape[3]
+    im_depth_rescale = cv2.resize(im_depth, dsize=(height, width), interpolation=cv2.INTER_NEAREST)
+    points_rescale = cv2.resize(points, dsize=(height, width), interpolation=cv2.INTER_NEAREST)
+
+    # optimization
+    # initialization
+    x0 = np.zeros((6,1), dtype=np.float32)
+    index = np.where(im_depth > 0)
+    x3d = points[index[0], index[1], :]
+    x0[3:6] = np.mean(x3d, axis=0).reshape((3,1))
+    bounds = ((-np.pi, np.pi), (-np.pi, np.pi), (-np.pi, np.pi), (None, None), (None, None), (np.min(x3d[:,2]), None))
+    res = minimize(loss_pose, x0, (points_rescale, im_depth_rescale, center_pred), method='SLSQP', bounds=bounds, options={'disp': True})
+    print res.x
+
+    # transform the points
+    rx = res.x[0]
+    ry = res.x[1]
+    rz = res.x[2]
+    C = res.x[3:6].reshape((3,1))
+
+    # construct rotation matrix
+    Rx = np.matrix([[1, 0, 0], [0, math.cos(rx), -math.sin(rx)], [0, math.sin(rx), math.cos(rx)]])
+    Ry = np.matrix([[math.cos(ry), 0, math.sin(ry)], [0, 1, 0], [-math.sin(ry), 0, math.cos(ry)]])
+    Rz = np.matrix([[math.cos(rz), -math.sin(rz), 0], [math.sin(rz), math.cos(rz), 0], [0, 0, 1]])
+    R = Rz * Ry * Rx
+
+    # transform the points
+    index = np.where(im_depth_rescale > 0)
+    x3d = points_rescale[index[0], index[1], :].transpose()
+    num = x3d.shape[1]
+    Cmat = np.tile(C, (1, num))
+    points_transform = R * (x3d - Cmat)
+
+    return points_rescale, np.array(points_transform)
+
+
+def vis_detections(im, cls_prob, center_pred, points_rescale, points_transform):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
@@ -83,18 +204,18 @@ def vis_detections(im, cls_prob, center_pred):
     fig = plt.figure()
 
     # show image
-    fig.add_subplot(231)
+    fig.add_subplot(241)
     plt.imshow(im)
 
     # show class label
     label = cls_prob[0, 1, :, :]
-    fig.add_subplot(232)
+    fig.add_subplot(242)
     plt.imshow(label)
 
     # show the target
     # ax = fig.add_subplot(133, projection='3d')
     # ax.scatter(center_pred[0, 0, :, :], center_pred[0, 2, :, :], center_pred[0, 1, :, :], c='r', marker='o')
-    fig.add_subplot(233)
+    fig.add_subplot(243)
     plt.imshow(label)
     vx = center_pred[0, 0, :, :]
     vy = center_pred[0, 1, :, :]
@@ -106,13 +227,30 @@ def vis_detections(im, cls_prob, center_pred):
 
     # show the azimuth image
     azimuth = center_pred[0, 2, :, :]
-    fig.add_subplot(234)
+    fig.add_subplot(245)
     plt.imshow(azimuth)
 
     # show the elevation image
     elevation = center_pred[0, 3, :, :]
-    fig.add_subplot(235)
+    fig.add_subplot(246)
     plt.imshow(elevation)
+
+    # show the 3D points
+    ax = fig.add_subplot(247, projection='3d')
+    ax.scatter(points_rescale[:,:,0], points_rescale[:,:,1], points_rescale[:,:,2], c='r', marker='o')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_aspect('equal')
+
+    # show the 3D points transform
+    ax = fig.add_subplot(248, projection='3d')
+    ax.scatter(points_transform[0,:], points_transform[1,:], points_transform[2,:], c='r', marker='o')
+    ax.scatter(0, 0, 0, c='g', marker='o')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_aspect('equal')
 
     plt.show()
 
@@ -162,7 +300,14 @@ def test_net(net, imdb):
         print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(i + 1, num_images, _t['im_detect'].average_time, _t['misc'].average_time)
 
-        vis_detections(im, cls_prob, center_pred)
+        # read depth image
+        im_depth = cv2.imread(imdb.label_path_at(i), cv2.IMREAD_UNCHANGED)
+        # read meta data
+        meta_data = scipy.io.loadmat(imdb.metadata_path_at(i))
+        # compute object pose
+        points_rescale, points_transform = pose_estimate(im_depth, meta_data, center_pred)
+
+        vis_detections(im, cls_prob, center_pred, points_rescale, points_transform)
 
     det_file = os.path.join(output_dir, 'detections.pkl')
     with open(det_file, 'wb') as f:
