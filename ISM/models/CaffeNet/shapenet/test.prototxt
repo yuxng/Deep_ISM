@@ -1,6 +1,6 @@
 name: "CaffeNet"
 
-input: "data"
+input: "data_image"
 input_shape {
   dim: 1
   dim: 3
@@ -8,10 +8,19 @@ input_shape {
   dim: 224
 }
 
+input: "data_depth"
+input_shape {
+  dim: 1
+  dim: 3
+  dim: 224
+  dim: 224
+}
+
+# RGB tower
 layer {
   name: "conv1"
   type: "Convolution"
-  bottom: "data"
+  bottom: "data_image"
   top: "conv1"
   param {
     lr_mult: 0
@@ -184,12 +193,201 @@ layer {
   top: "conv5"
 }
 
+# depth tower
+layer {
+  name: "conv1_d"
+  type: "Convolution"
+  bottom: "data_depth"
+  top: "conv1_d"
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 96
+    kernel_size: 11
+    pad: 5
+    stride: 4
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "conv1_d"
+  top: "conv1_d"
+}
+layer {
+  name: "pool1_d"
+  type: "Pooling"
+  bottom: "conv1_d"
+  top: "pool1_d"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm1_d"
+  type: "LRN"
+  bottom: "pool1_d"
+  top: "norm1_d"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv2_d"
+  type: "Convolution"
+  bottom: "norm1_d"
+  top: "conv2_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 5
+    pad: 2
+    group: 2
+  }
+}
+layer {
+  name: "relu2_d"
+  type: "ReLU"
+  bottom: "conv2_d"
+  top: "conv2_d"
+}
+layer {
+  name: "pool2_d"
+  type: "Pooling"
+  bottom: "conv2_d"
+  top: "pool2_d"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm2_d"
+  type: "LRN"
+  bottom: "pool2_d"
+  top: "norm2_d"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv3_d"
+  type: "Convolution"
+  bottom: "norm2_d"
+  top: "conv3_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+  }
+}
+layer {
+  name: "relu3_d"
+  type: "ReLU"
+  bottom: "conv3_d"
+  top: "conv3_d"
+}
+layer {
+  name: "conv4_d"
+  type: "Convolution"
+  bottom: "conv3_d"
+  top: "conv4_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu4_d"
+  type: "ReLU"
+  bottom: "conv4_d"
+  top: "conv4_d"
+}
+layer {
+  name: "conv5_d"
+  type: "Convolution"
+  bottom: "conv4_d"
+  top: "conv5_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu5_d"
+  type: "ReLU"
+  bottom: "conv5_d"
+  top: "conv5_d"
+}
+
+# concatenate features
+layer {
+  name: "concat"
+  bottom: "conv5"
+  bottom: "conv5_d"
+  top: "conv5_all"
+  type: "Concat"
+  concat_param {
+    axis: 1
+  }
+}
+
 #========= RPN ============
 
 layer {
   name: "rpn_conv1"
   type: "Convolution"
-  bottom: "conv5"
+  bottom: "conv5_all"
   top: "rpn_conv1"
   convolution_param {
     num_output: 256
@@ -224,7 +422,7 @@ layer {
   bottom: "rpn_conv1"
   top: "center_pred"
   convolution_param {
-    num_output: 4     # voting vector
+    num_output: 5     # voting vector
     kernel_size: 1 pad: 0 stride: 1
   }
 }

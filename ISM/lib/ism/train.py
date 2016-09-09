@@ -32,6 +32,13 @@ class SolverWrapper(object):
                    'weights from {:s}').format(pretrained_model)
             self.solver.net.copy_from(pretrained_model)
 
+            for key, value in self.solver.net.params.iteritems():
+                key_depth = key + '_d'
+                if self.solver.net.params.has_key(key_depth):
+                    self.solver.net.params[key_depth][0].data[...] = self.solver.net.params[key][0].data
+                    self.solver.net.params[key_depth][1].data[...] = self.solver.net.params[key][1].data
+                    print 'layer %s initialized from layer %s' % (key_depth, key)
+
         self.solver_param = caffe_pb2.SolverParameter()
         with open(solver_prototxt, 'rt') as f:
             pb2.text_format.Merge(f.read(), self.solver_param)

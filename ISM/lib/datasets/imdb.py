@@ -105,7 +105,7 @@ class imdb(object):
         num_images = self.num_images
         for i in xrange(num_images):
             entry = {'image' : self.roidb[i]['image'],
-                     'label' : self.roidb[i]['label'],
+                     'depth' : self.roidb[i]['depth'],
                      'meta_data' : self.roidb[i]['meta_data'],
                      'gt_class' : self.roidb[i]['gt_class'],
                      'flipped' : True}

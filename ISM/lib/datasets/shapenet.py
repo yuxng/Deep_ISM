@@ -103,21 +103,21 @@ class shapenet(datasets.imdb):
                 'Path does not exist: {}'.format(image_path)
         return image_path
 
-    def label_path_at(self, i):
+    def depth_path_at(self, i):
         """
         Return the absolute path to image i in the image sequence.
         """
-        return self.label_path_from_index(self.image_index[i])
+        return self.depth_path_from_index(self.image_index[i])
 
-    def label_path_from_index(self, index):
+    def depth_path_from_index(self, index):
         """
-        Construct an label path from the image's "index" identifier.
+        Construct an depth path from the image's "index" identifier.
         """
 
-        label_path = os.path.join(self._data_path, index + '_depth' + self._image_ext)
-        assert os.path.exists(label_path), \
-                'Path does not exist: {}'.format(label_path)
-        return label_path
+        depth_path = os.path.join(self._data_path, index + '_depth' + self._image_ext)
+        assert os.path.exists(depth_path), \
+                'Path does not exist: {}'.format(depth_path)
+        return depth_path
 
     def metadata_path_at(self, i):
         """
@@ -185,8 +185,8 @@ class shapenet(datasets.imdb):
         # image path
         image_path = self.image_path_from_index(index)
 
-        # label path
-        label_path = self.label_path_from_index(index)
+        # depth path
+        depth_path = self.depth_path_from_index(index)
 
         # metadata path
         metadata_path = self.metadata_path_from_index(index)
@@ -197,7 +197,7 @@ class shapenet(datasets.imdb):
         gt_class = self._class_to_ind[cls]
         
         return {'image': image_path,
-                'label': label_path,
+                'depth': depth_path,
                 'meta_data': metadata_path,
                 'gt_class': gt_class,
                 'flipped' : False}

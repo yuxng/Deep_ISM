@@ -23,15 +23,16 @@ def get_minibatch(roidb, num_classes):
 
     # Get the input image blob, formatted for caffe
     random_scale_ind = npr.randint(0, high=len(cfg.TRAIN.SCALES_BASE))
-    im_blob, im_scales = _get_image_blob(roidb, random_scale_ind)
+    im_blob, im_depth_blob, im_scales = _get_image_blob(roidb, random_scale_ind)
 
     # build the box information blob
     label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb, im_scales)
 
     # For debug visualizations
-    # _vis_minibatch(im_blob, label_blob, target_blob)
+    # _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob)
 
-    blobs = {'data': im_blob,
+    blobs = {'data_image': im_blob,
+             'data_depth': im_depth_blob,
              'labels': label_blob,
              'targets': target_blob,
              'inside_weights': inside_weights_blob,
@@ -45,25 +46,39 @@ def _get_image_blob(roidb, scale_ind):
     """
     num_images = len(roidb)
     processed_ims = []
+    processed_ims_depth = []
     im_scales = []
     for i in xrange(num_images):
+        # rgb
         im = cv2.imread(roidb[i]['image'])
         if roidb[i]['flipped']:
             im = im[:, ::-1, :]
 
         im_orig = im.astype(np.float32, copy=True)
         im_orig -= cfg.PIXEL_MEANS
-
         im_scale = cfg.TRAIN.SCALES_BASE[scale_ind]
         im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
-
         im_scales.append(im_scale)
         processed_ims.append(im)
 
+        # depth
+        im_depth = cv2.imread(roidb[i]['depth'], cv2.IMREAD_UNCHANGED).astype(np.float32)
+        im_depth = im_depth / im_depth.max() * 255
+        im_depth = np.tile(im_depth[:,:,np.newaxis], (1,1,3))
+        if roidb[i]['flipped']:
+            im_depth = im_depth[:, ::-1]
+
+        im_orig = im_depth.astype(np.float32, copy=True)
+        im_orig -= cfg.PIXEL_MEANS
+        im_depth = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+        processed_ims_depth.append(im_depth)
+
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims, 3)
+    blob_depth = im_list_to_blob(processed_ims_depth, 3)
 
-    return blob, im_scales
+    return blob, blob_depth, im_scales
+
 
 # backproject pixels into 3D points
 def backproject(im_depth, meta_data):
@@ -78,7 +93,7 @@ def backproject(im_depth, meta_data):
     # compute the 3D points        
     width = depth.shape[1]
     height = depth.shape[0]
-    points = np.zeros((height, width, 2), dtype=np.float32)
+    points = np.zeros((height, width, 3), dtype=np.float32)
 
     # camera location
     C = meta_data['camera_location']
@@ -111,11 +126,14 @@ def backproject(im_depth, meta_data):
 
     # compute the azimuth and elevation of each 3D point
     r = np.linalg.norm(X, axis=0)
-    elevation = (np.pi/2 - np.arccos(np.divide(X[2,:], r))) / np.pi
-    azimuth = np.arctan2(X[1,:], X[0,:]) / np.pi
+    # sin of elevation, sin, cos of azimuth
+    elevation_sin = np.sin(np.pi/2 - np.arccos(np.divide(X[2,:], r)))
+    azimuth_sin = np.sin(np.arctan2(X[1,:], X[0,:]))
+    azimuth_cos = np.cos(np.arctan2(X[1,:], X[0,:]))
 
-    points[y, x, 0] = azimuth.reshape(height, width)
-    points[y, x, 1] = elevation.reshape(height, width)
+    points[y, x, 0] = azimuth_sin.reshape(height, width)
+    points[y, x, 1] = azimuth_cos.reshape(height, width)
+    points[y, x, 2] = elevation_sin.reshape(height, width)
 
     # mask
     index = np.where(im_depth == 0)
@@ -171,11 +189,11 @@ def _get_label_blob(roidb, im_scales):
     processed_ims_cls = []
     processed_ims_target = []
     # cx, cy, azimuth, elevation
-    num_channels = 4
+    num_channels = 5
 
     for i in xrange(num_images):
         # read depth image
-        im = cv2.imread(roidb[i]['label'], cv2.IMREAD_UNCHANGED)
+        im = cv2.imread(roidb[i]['depth'], cv2.IMREAD_UNCHANGED)
         if roidb[i]['flipped']:
             im = im[:, ::-1]
 
@@ -196,7 +214,7 @@ def _get_label_blob(roidb, im_scales):
         height = im_mask.shape[0]
         im_target = np.zeros((height, width, num_channels), dtype=np.float32)
         im_target[:,:,0:2] = vote_centers(im_mask)
-        im_target[:,:,2:4] = backproject(im, meta_data)
+        im_target[:,:,2:num_channels] = backproject(im, meta_data)
 
         # rescale image
         im_scale = im_scales[i]
@@ -240,31 +258,36 @@ def _get_label_blob(roidb, im_scales):
     return blob_cls_rescale, blob_target_rescale, blob_inside_weights, blob_outside_weights
 
 
-def _vis_minibatch(im_blob, label_blob, target_blob):
+def _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob):
     """Visualize a mini-batch for debugging."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
     for i in xrange(im_blob.shape[0]):
         fig = plt.figure()
+        # show image
         im = im_blob[i, :, :, :].transpose((1, 2, 0)).copy()
         im += cfg.PIXEL_MEANS
         im = im[:, :, (2, 1, 0)]
         im = im.astype(np.uint8)
-        # show image
-        fig.add_subplot(231)
+        fig.add_subplot(241)
+        plt.imshow(im)
+
+        # show depth image
+        im = im_depth_blob[i, :, :, :].transpose((1, 2, 0)).copy()
+        im += cfg.PIXEL_MEANS
+        im = im[:, :, (2, 1, 0)]
+        im = im.astype(np.uint8)
+        fig.add_subplot(242)
         plt.imshow(im)
 
         # show label
         label = label_blob[i, 0, :, :]
-        fig.add_subplot(232)
+        fig.add_subplot(243)
         plt.imshow(label)
 
         # show the target
-        # ax = fig.add_subplot(133, projection='3d')
-        # target = target_blob[i, :, :, :].transpose((1, 2, 0)).copy()
-        # ax.scatter(target[:,:,0], target[:,:,2], target[:,:,1], c='r', marker='o')
-        fig.add_subplot(233)
+        fig.add_subplot(244)
         plt.imshow(label)
         vx = target_blob[i, 0, :, :]
         vy = target_blob[i, 1, :, :]
@@ -274,13 +297,18 @@ def _vis_minibatch(im_blob, label_blob, target_blob):
                     plt.gca().annotate("", xy=(x + 1.1*vx[y, x], y + 1.1*vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
                         arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
-        # show the azimuth image
+        # show the azimuth sin image
         azimuth = target_blob[i, 2, :, :]
-        fig.add_subplot(234)
+        fig.add_subplot(245)
         plt.imshow(azimuth)
 
-        # show the elevation image
-        elevation = target_blob[i, 3, :, :]
-        fig.add_subplot(235)
+        # show the azimuth cos image
+        azimuth = target_blob[i, 3, :, :]
+        fig.add_subplot(246)
+        plt.imshow(azimuth)
+
+        # show the elevation sin image
+        elevation = target_blob[i, 4, :, :]
+        fig.add_subplot(247)
         plt.imshow(elevation)
         plt.show()

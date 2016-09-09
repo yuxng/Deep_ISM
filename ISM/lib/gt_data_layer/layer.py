@@ -56,27 +56,29 @@ class GtDataLayer(caffe.Layer):
         self._num_classes = layer_params['num_classes']
 
         self._name_to_top_map = {
-            'data': 0,
-            'labels': 1,
-            'targets': 2,
-            'inside_weights': 3,
-            'outside_weights': 4}
+            'data_image': 0,
+            'data_depth': 1,
+            'labels': 2,
+            'targets': 3,
+            'inside_weights': 4,
+            'outside_weights': 5}
 
         # data blob: holds a batch of N images, each with 3 channels
         # The height and width (256 x 256) are dummy values
         top[0].reshape(1, 3, 256, 256)
+        top[1].reshape(1, 3, 256, 256)
 
         # class label blob
-        top[1].reshape(1, 1, 17, 17)
+        top[2].reshape(1, 1, 17, 17)
 
         # regression target blob
-        top[2].reshape(1, 4, 17, 17)
+        top[3].reshape(1, 5, 17, 17)
 
         # inside weights blob
-        top[3].reshape(1, 4, 17, 17)
+        top[4].reshape(1, 5, 17, 17)
 
         # outside weights blob
-        top[4].reshape(1, 4, 17, 17)
+        top[5].reshape(1, 5, 17, 17)
             
     def forward(self, bottom, top):
         """Get blobs and copy them into this layer's top blob vector."""

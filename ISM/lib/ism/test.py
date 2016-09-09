@@ -20,7 +20,7 @@ import math
 import scipy.io
 from scipy.optimize import minimize
 
-def _get_image_blob(im):
+def _get_image_blob(im, im_depth):
     """Converts an image into a network input.
 
     Arguments:
@@ -31,6 +31,7 @@ def _get_image_blob(im):
         im_scale_factors (list): list of image scales (relative to im) used
             in the image pyramid
     """
+    # RGB
     im_orig = im.astype(np.float32, copy=True)
     im_orig -= cfg.PIXEL_MEANS
 
@@ -43,13 +44,25 @@ def _get_image_blob(im):
         im_scale_factors.append(im_scale)
         processed_ims.append(im)
 
+    # depth
+    im_orig = im_depth.astype(np.float32, copy=True)
+    im_orig = im_orig / im_orig.max() * 255
+    im_orig = np.tile(im_orig[:,:,np.newaxis], (1,1,3))
+    im_orig -= cfg.PIXEL_MEANS
+
+    processed_ims_depth = []
+    for im_scale in scales:
+        im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+        processed_ims_depth.append(im)
+
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims, 3)
+    blob_depth = im_list_to_blob(processed_ims_depth, 3)
 
-    return blob, np.array(im_scale_factors)
+    return blob, blob_depth, np.array(im_scale_factors)
 
 
-def im_detect(net, im, num_classes):
+def im_detect(net, im, im_depth, num_classes):
     """Detect object classes in an image given boxes on grids.
 
     Arguments:
@@ -64,11 +77,13 @@ def im_detect(net, im, num_classes):
     """
 
     # compute image blob
-    im_blob, im_scale_factors = _get_image_blob(im)
+    im_blob, im_depth_blob, im_scale_factors = _get_image_blob(im, im_depth)
 
     # reshape network inputs
-    net.blobs['data'].reshape(*(im_blob.shape))
-    blobs_out = net.forward(data=im_blob.astype(np.float32, copy=False))
+    net.blobs['data_image'].reshape(*(im_blob.shape))
+    net.blobs['data_depth'].reshape(*(im_depth_blob.shape))
+    blobs_out = net.forward(data_image=im_blob.astype(np.float32, copy=False),
+                            data_depth=im_depth_blob.astype(np.float32, copy=False))
 
     # get outputs
     cls_prob = blobs_out['cls_prob']
@@ -141,15 +156,20 @@ def loss_pose(x, points, im_depth, center_pred):
 
     # compute the azimuth and elevation of each 3D point
     r = np.linalg.norm(X, axis=0)
-    elevation = (np.pi/2 - np.arccos(np.divide(X[2,:], r))) / np.pi
-    azimuth = np.arctan2(X[1,:], X[0,:]) / np.pi
+    elevation_sin = np.sin(np.pi/2 - np.arccos(np.divide(X[2,:], r)))
+    azimuth_sin = np.sin(np.arctan2(X[1,:], X[0,:]))
+    azimuth_cos = np.cos(np.arctan2(X[1,:], X[0,:]))
 
     # get the predicted azimuth and elevation
-    azimuth_pred = center_pred[0, 2, index[0], index[1]]
-    elevation_pred = center_pred[0, 3, index[0], index[1]]
+    azimuth_sin_pred = center_pred[0, 2, index[0], index[1]]
+    azimuth_cos_pred = center_pred[0, 3, index[0], index[1]]
+    elevation_sin_pred = center_pred[0, 4, index[0], index[1]]
 
     # compute the loss
-    loss = (np.mean(np.power(azimuth - azimuth_pred, 2)) + np.mean(np.power(elevation - elevation_pred, 2))) / 2
+    loss = (np.mean(np.power(azimuth_sin - azimuth_sin_pred, 2)) +
+            np.mean(np.power(azimuth_cos - azimuth_cos_pred, 2)) + 
+            np.mean(np.power(elevation_sin - elevation_sin_pred, 2))) / 3
+
     return loss
 
 
@@ -196,27 +216,33 @@ def pose_estimate(im_depth, meta_data, center_pred):
     return points_rescale, np.array(points_transform)
 
 
-def vis_detections(im, cls_prob, center_pred, points_rescale, points_transform):
+def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
-    im = im[:, :, (2, 1, 0)]
     fig = plt.figure()
 
     # show image
-    fig.add_subplot(241)
+    ax = fig.add_subplot(331)
+    im = im[:, :, (2, 1, 0)]
     plt.imshow(im)
+    ax.set_title('input image')
+
+    # show depth
+    ax = fig.add_subplot(332)
+    plt.imshow(im_depth)
+    ax.set_title('input depth')
 
     # show class label
     label = cls_prob[0, 1, :, :]
-    fig.add_subplot(242)
+    ax = fig.add_subplot(333)
     plt.imshow(label)
+    ax.set_title('class pred')
 
     # show the target
-    # ax = fig.add_subplot(133, projection='3d')
-    # ax.scatter(center_pred[0, 0, :, :], center_pred[0, 2, :, :], center_pred[0, 1, :, :], c='r', marker='o')
-    fig.add_subplot(243)
+    ax = fig.add_subplot(334)
     plt.imshow(label)
+    ax.set_title('center pred')
     vx = center_pred[0, 0, :, :]
     vy = center_pred[0, 1, :, :]
     for x in xrange(vx.shape[1]):
@@ -225,32 +251,42 @@ def vis_detections(im, cls_prob, center_pred, points_rescale, points_transform):
                 plt.gca().annotate("", xy=(x + vx[y, x], y + vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
                     arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
-    # show the azimuth image
-    azimuth = center_pred[0, 2, :, :]
-    fig.add_subplot(245)
-    plt.imshow(azimuth)
+    # show the azimuth sin image
+    azimuth_sin = center_pred[0, 2, :, :]
+    ax = fig.add_subplot(335)
+    plt.imshow(azimuth_sin)
+    ax.set_title('azimuth sin pred')
 
-    # show the elevation image
-    elevation = center_pred[0, 3, :, :]
-    fig.add_subplot(246)
+    # show the azimuth cos image
+    azimuth_cos = center_pred[0, 3, :, :]
+    ax = fig.add_subplot(336)
+    plt.imshow(azimuth_cos)
+    ax.set_title('azimuth cos pred')
+
+    # show the elevation sin image
+    elevation = center_pred[0, 4, :, :]
+    ax = fig.add_subplot(337)
     plt.imshow(elevation)
+    ax.set_title('elevation sin pred')
 
     # show the 3D points
-    ax = fig.add_subplot(247, projection='3d')
+    ax = fig.add_subplot(338, projection='3d')
     ax.scatter(points_rescale[:,:,0], points_rescale[:,:,1], points_rescale[:,:,2], c='r', marker='o')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.set_aspect('equal')
+    ax.set_title('input point cloud')
 
     # show the 3D points transform
-    ax = fig.add_subplot(248, projection='3d')
+    ax = fig.add_subplot(339, projection='3d')
     ax.scatter(points_transform[0,:], points_transform[1,:], points_transform[2,:], c='r', marker='o')
     ax.scatter(0, 0, 0, c='g', marker='o')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.set_aspect('equal')
+    ax.set_title('transformed point cloud')
 
     plt.show()
 
@@ -278,6 +314,7 @@ def test_net(net, imdb):
     # for i in xrange(num_images):
     for i in perm:
         im = cv2.imread(imdb.image_path_at(i))
+        im_depth = cv2.imread(imdb.depth_path_at(i), cv2.IMREAD_UNCHANGED)
 
         # shift
         # rows = im.shape[0]
@@ -289,7 +326,7 @@ def test_net(net, imdb):
         # im = cv2.resize(im, None, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_LINEAR)
 
         _t['im_detect'].tic()
-        cls_prob, center_pred = im_detect(net, im, imdb.num_classes)
+        cls_prob, center_pred = im_detect(net, im, im_depth, imdb.num_classes)
         _t['im_detect'].toc()
 
         _t['misc'].tic()
@@ -300,14 +337,12 @@ def test_net(net, imdb):
         print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(i + 1, num_images, _t['im_detect'].average_time, _t['misc'].average_time)
 
-        # read depth image
-        im_depth = cv2.imread(imdb.label_path_at(i), cv2.IMREAD_UNCHANGED)
         # read meta data
         meta_data = scipy.io.loadmat(imdb.metadata_path_at(i))
         # compute object pose
         points_rescale, points_transform = pose_estimate(im_depth, meta_data, center_pred)
 
-        vis_detections(im, cls_prob, center_pred, points_rescale, points_transform)
+        vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform)
 
     det_file = os.path.join(output_dir, 'detections.pkl')
     with open(det_file, 'wb') as f:
