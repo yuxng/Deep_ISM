@@ -134,7 +134,7 @@ def backproject_camera(im_depth, meta_data):
     return points
 
 
-def loss_pose(x, points, im_depth, center_pred):
+def loss_pose(x, points, cls_label, azimuth_sin_pred, azimuth_cos_pred, elevation_sin_pred):
     """ loss function for pose esimation """
     rx = x[0]
     ry = x[1]
@@ -148,7 +148,7 @@ def loss_pose(x, points, im_depth, center_pred):
     R = Rz * Ry * Rx
 
     # transform the points
-    index = np.where(im_depth > 0)
+    index = np.where(cls_label > 0)
     x3d = points[index[0], index[1], :].transpose()
     num = x3d.shape[1]
     Cmat = np.tile(C, (1, num))
@@ -160,20 +160,15 @@ def loss_pose(x, points, im_depth, center_pred):
     azimuth_sin = np.sin(np.arctan2(X[1,:], X[0,:]))
     azimuth_cos = np.cos(np.arctan2(X[1,:], X[0,:]))
 
-    # get the predicted azimuth and elevation
-    azimuth_sin_pred = center_pred[0, 2, index[0], index[1]]
-    azimuth_cos_pred = center_pred[0, 3, index[0], index[1]]
-    elevation_sin_pred = center_pred[0, 4, index[0], index[1]]
-
     # compute the loss
-    loss = (np.mean(np.power(azimuth_sin - azimuth_sin_pred, 2)) +
-            np.mean(np.power(azimuth_cos - azimuth_cos_pred, 2)) + 
-            np.mean(np.power(elevation_sin - elevation_sin_pred, 2))) / 3
+    loss = (np.mean(np.power(azimuth_sin - azimuth_sin_pred[index[0], index[1]], 2)) +
+            np.mean(np.power(azimuth_cos - azimuth_cos_pred[index[0], index[1]], 2)) + 
+            np.mean(np.power(elevation_sin - elevation_sin_pred[index[0], index[1]], 2))) / 3
 
     return loss
 
 
-def pose_estimate(im_depth, meta_data, center_pred):
+def pose_estimate(im_depth, meta_data, cls_prob, center_pred):
     """ estimate the pose of object from network predication """
     # compute 3D points in camera coordinate framework
     points = backproject_camera(im_depth, meta_data)
@@ -184,14 +179,25 @@ def pose_estimate(im_depth, meta_data, center_pred):
     im_depth_rescale = cv2.resize(im_depth, dsize=(height, width), interpolation=cv2.INTER_NEAREST)
     points_rescale = cv2.resize(points, dsize=(height, width), interpolation=cv2.INTER_NEAREST)
 
+    # find the max cls labels
+    num_channels = 5
+    cls_label = np.argmax(cls_prob, axis = 1).reshape((height, width))
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    azimuth_sin_pred = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
+    azimuth_cos_pred = center_pred[:, num_channels*cls_label+3, y, x].reshape((height, width))
+    elevation_sin_pred = center_pred[:, num_channels*cls_label+4, y, x].reshape((height, width))
+
     # optimization
     # initialization
     x0 = np.zeros((6,1), dtype=np.float32)
     index = np.where(im_depth > 0)
     x3d = points[index[0], index[1], :]
     x0[3:6] = np.mean(x3d, axis=0).reshape((3,1))
-    bounds = ((-np.pi, np.pi), (-np.pi, np.pi), (-np.pi, np.pi), (None, None), (None, None), (np.min(x3d[:,2]), None))
-    res = minimize(loss_pose, x0, (points_rescale, im_depth_rescale, center_pred), method='SLSQP', bounds=bounds, options={'disp': True})
+    xmin = np.min(x3d, axis=0)
+    xmax = np.max(x3d, axis=0)
+    factor = 2
+    bounds = ((-np.pi, np.pi), (-np.pi, np.pi), (-np.pi, np.pi), (factor*xmin[0], factor*xmax[0]), (factor*xmin[1], factor*xmax[1]), (xmin[2], None))
+    res = minimize(loss_pose, x0, (points_rescale, cls_label, azimuth_sin_pred, azimuth_cos_pred, elevation_sin_pred), method='SLSQP', bounds=bounds, options={'disp': True})
     print res.x
 
     # transform the points
@@ -234,17 +240,26 @@ def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_t
     ax.set_title('input depth')
 
     # show class label
-    label = cls_prob[0, 1, :, :]
+    height = center_pred.shape[2]
+    width = center_pred.shape[3]
+    cls_label = np.argmax(cls_prob, axis = 1).reshape((height, width))
     ax = fig.add_subplot(333)
-    plt.imshow(label)
+    plt.imshow(cls_label)
     ax.set_title('class pred')
 
     # show the target
     ax = fig.add_subplot(334)
-    plt.imshow(label)
+    plt.imshow(cls_label)
     ax.set_title('center pred')
-    vx = center_pred[0, 0, :, :]
-    vy = center_pred[0, 1, :, :]
+
+    num_channels = 5
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    vx = center_pred[:, num_channels*cls_label+0, y, x].reshape((height, width))
+    vy = center_pred[:, num_channels*cls_label+1, y, x].reshape((height, width))
+    azimuth_sin = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
+    azimuth_cos = center_pred[:, num_channels*cls_label+3, y, x].reshape((height, width))
+    elevation_sin = center_pred[:, num_channels*cls_label+4, y, x].reshape((height, width))
+
     for x in xrange(vx.shape[1]):
         for y in xrange(vx.shape[0]):
             if vx[y, x] != 0 and vy[y, x] != 0:
@@ -252,21 +267,18 @@ def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_t
                     arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
     # show the azimuth sin image
-    azimuth_sin = center_pred[0, 2, :, :]
     ax = fig.add_subplot(335)
     plt.imshow(azimuth_sin)
     ax.set_title('azimuth sin pred')
 
     # show the azimuth cos image
-    azimuth_cos = center_pred[0, 3, :, :]
     ax = fig.add_subplot(336)
     plt.imshow(azimuth_cos)
     ax.set_title('azimuth cos pred')
 
     # show the elevation sin image
-    elevation = center_pred[0, 4, :, :]
     ax = fig.add_subplot(337)
-    plt.imshow(elevation)
+    plt.imshow(elevation_sin)
     ax.set_title('elevation sin pred')
 
     # show the 3D points
@@ -340,7 +352,7 @@ def test_net(net, imdb):
         # read meta data
         meta_data = scipy.io.loadmat(imdb.metadata_path_at(i))
         # compute object pose
-        points_rescale, points_transform = pose_estimate(im_depth, meta_data, center_pred)
+        points_rescale, points_transform = pose_estimate(im_depth, meta_data, cls_prob, center_pred)
 
         vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform)
 

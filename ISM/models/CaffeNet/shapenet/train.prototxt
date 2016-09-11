@@ -11,7 +11,7 @@ layer {
   python_param {
     module: 'gt_data_layer.layer'
     layer: 'GtDataLayer'
-    param_str: "'num_classes': 2"
+    param_str: "'num_classes': 6"
   }
 }
 
@@ -411,7 +411,7 @@ layer {
   param { lr_mult: 1.0 }
   param { lr_mult: 2.0 }
   convolution_param {
-    num_output: 2   # num_classes
+    num_output: 6   # num_classes
     kernel_size: 1 pad: 0 stride: 1
     weight_filler { type: "gaussian" std: 0.01 }
     bias_filler { type: "constant" value: 0 }
@@ -425,7 +425,7 @@ layer {
   param { lr_mult: 1.0 }
   param { lr_mult: 2.0 }
   convolution_param {
-    num_output: 5   # voting vector
+    num_output: 30   # voting vector 5 * num_classes
     kernel_size: 1 pad: 0 stride: 1
     weight_filler { type: "gaussian" std: 0.01 }
     bias_filler { type: "constant" value: 0 }

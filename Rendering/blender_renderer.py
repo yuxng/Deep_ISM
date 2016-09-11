@@ -77,11 +77,15 @@ g_shape_synsets = [x[0] for x in g_shape_synset_name_pairs]
 g_shape_names = [x[1] for x in g_shape_synset_name_pairs]
 g_view_distribution_files = dict(zip(g_shape_synsets, [name+'.txt' for name in g_shape_names]))
 
-g_syn_light_num_lowbound = 1
+g_syn_light_num_lowbound = 3
 g_syn_light_num_highbound = 6
 g_syn_light_dist_lowbound = 8
 g_syn_light_dist_highbound = 12
-g_syn_light_energy_mean = 2
+g_syn_light_azimuth_degree_lowbound = 0
+g_syn_light_azimuth_degree_highbound = 360
+g_syn_light_elevation_degree_lowbound = -90
+g_syn_light_elevation_degree_highbound = 90
+g_syn_light_energy_mean = 3
 g_syn_light_energy_std = 1
 g_syn_light_environment_energy_lowbound = 0
 g_syn_light_environment_energy_highbound = 1
@@ -248,13 +252,22 @@ class BlenderRenderer(object):
         # set point lights
         num_light = random.randint(g_syn_light_num_lowbound,g_syn_light_num_highbound)
         print(num_light)
+        light_info = np.zeros((num_light, 4), dtype=np.float32)
         for i in range(num_light):
-            light_azimuth_deg = np.random.uniform(azimuth-90, azimuth+90)
-            light_elevation_deg  = np.random.uniform(elevation-45, elevation+45)
+            light_azimuth_deg = np.random.uniform(g_syn_light_azimuth_degree_lowbound, g_syn_light_azimuth_degree_highbound)
+            light_elevation_deg  = np.random.uniform(g_syn_light_elevation_degree_lowbound, g_syn_light_elevation_degree_highbound)
             light_dist = np.random.uniform(g_syn_light_dist_lowbound, g_syn_light_dist_highbound)
             lx, ly, lz = obj_centened_camera_pos(light_dist, light_azimuth_deg, light_elevation_deg)
             bpy.ops.object.lamp_add(type='POINT', view_align = False, location=(lx, ly, lz))
-            bpy.data.objects['Point'].data.energy = np.random.normal(g_syn_light_energy_mean, g_syn_light_energy_std)
+            light_energy = np.random.normal(g_syn_light_energy_mean, g_syn_light_energy_std)
+            bpy.data.objects['Point'].data.energy = light_energy
+
+            light_info[i, 0] = light_azimuth_deg
+            light_info[i, 1] = light_elevation_deg
+            light_info[i, 2] = light_dist
+            light_info[i, 3] = light_energy
+
+        self.light_info = light_info
 
     def setViewpoint(self, azimuth, altitude, yaw, distance_ratio, fov):
         self._set_lighting(azimuth, altitude)
@@ -496,7 +509,8 @@ class BlenderRenderer(object):
                      'viewport_size_x': self.render_context.resolution_x,
                      'viewport_size_y': self.render_context.resolution_y,
                      'camera_location': np.array(self.camera.location),
-                     'factor_depth': FACTOR_DEPTH}
+                     'factor_depth': FACTOR_DEPTH,
+                     'light_info': self.light_info}
 
         scipy.io.savemat(filename+'.mat', meta_data)
 
@@ -504,7 +518,7 @@ class BlenderRenderer(object):
 def main():
     '''Test function'''
 
-    synset = '03797390'
+    synset = '04379243'
     view_num = 10
 
     shapenet_root = '/var/Projects/ShapeNetCore.v1'
@@ -567,6 +581,9 @@ def main():
             renderer.save_meta_data(filename)
 
         renderer.clearModel()
+
+        if ind >= 199:
+            break
 
 
 if __name__ == "__main__":

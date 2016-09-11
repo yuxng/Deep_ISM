@@ -26,7 +26,7 @@ def get_minibatch(roidb, num_classes):
     im_blob, im_depth_blob, im_scales = _get_image_blob(roidb, random_scale_ind)
 
     # build the box information blob
-    label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb, im_scales)
+    label_blob, target_blob, inside_weights_blob, outside_weights_blob = _get_label_blob(roidb, im_scales, num_classes)
 
     # For debug visualizations
     # _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob)
@@ -182,7 +182,7 @@ def vote_centers(im_mask):
     return im_target
 
 
-def _get_label_blob(roidb, im_scales):
+def _get_label_blob(roidb, im_scales, num_classes):
     """ build the label blob """
 
     num_images = len(roidb)
@@ -204,7 +204,8 @@ def _get_label_blob(roidb, im_scales):
         im_mask[np.nonzero(im_orig)] = 1
 
         # compute the class label image
-        im_cls = roidb[i]['gt_class'] * im_mask
+        gt_class = roidb[i]['gt_class']
+        im_cls = gt_class * im_mask
 
         # load meta data
         meta_data = scipy.io.loadmat(roidb[i]['meta_data'])
@@ -212,9 +213,9 @@ def _get_label_blob(roidb, im_scales):
         # compute target
         width = im_mask.shape[1]
         height = im_mask.shape[0]
-        im_target = np.zeros((height, width, num_channels), dtype=np.float32)
-        im_target[:,:,0:2] = vote_centers(im_mask)
-        im_target[:,:,2:num_channels] = backproject(im, meta_data)
+        im_target = np.zeros((height, width, num_channels * num_classes), dtype=np.float32)
+        im_target[:,:, gt_class*num_channels:gt_class*num_channels+2] = vote_centers(im_mask)
+        im_target[:,:, gt_class*num_channels+2:gt_class*num_channels+num_channels] = backproject(im, meta_data)
 
         # rescale image
         im_scale = im_scales[i]
@@ -225,7 +226,7 @@ def _get_label_blob(roidb, im_scales):
 
     # Create a blob to hold the input images
     blob_cls = im_list_to_blob(processed_ims_cls, 1)
-    blob_target = im_list_to_blob(processed_ims_target, num_channels)
+    blob_target = im_list_to_blob(processed_ims_target, num_channels*num_classes)
 
     # blob image size
     image_height = blob_cls.shape[2]
@@ -244,16 +245,18 @@ def _get_label_blob(roidb, im_scales):
 
     # rescale the blob
     blob_cls_rescale = np.zeros((num_images, 1, height, width), dtype=np.float32)
-    blob_target_rescale = np.zeros((num_images, num_channels, height, width), dtype=np.float32)
-    blob_inside_weights = np.zeros((num_images, num_channels, height, width), dtype=np.float32)
-    blob_outside_weights = np.zeros((num_images, num_channels, height, width), dtype=np.float32)
+    blob_target_rescale = np.zeros((num_images, num_channels*num_classes, height, width), dtype=np.float32)
+    blob_inside_weights = np.zeros((num_images, num_channels*num_classes, height, width), dtype=np.float32)
+    blob_outside_weights = np.zeros((num_images, num_channels*num_classes, height, width), dtype=np.float32)
     for i in xrange(num_images):
+        gt_class = roidb[i]['gt_class']
         blob_cls_rescale[i,0,:,:] = cv2.resize(blob_cls[i,0,:,:], dsize=(height, width), interpolation=cv2.INTER_NEAREST)
-        index = np.where(blob_cls_rescale[i,0,:,:] > 0)
-        for j in xrange(num_channels):
+        index = np.where(blob_cls_rescale[i,0,:,:] == gt_class)
+        for j in xrange(num_channels*num_classes):
             blob_target_rescale[i,j,:,:] = cv2.resize(blob_target[i,j,:,:], dsize=(height, width), interpolation=cv2.INTER_NEAREST)
-            blob_inside_weights[i,j,index] = 1.0
-            blob_outside_weights[i,j,index] = 1.0 / (height * width)
+            if j >= gt_class * num_channels and j < (gt_class+1) * num_channels:
+                blob_inside_weights[i,j,index] = 1.0
+                blob_outside_weights[i,j,index] = 1.0 / (height * width)
 
     return blob_cls_rescale, blob_target_rescale, blob_inside_weights, blob_outside_weights
 
@@ -262,6 +265,7 @@ def _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob):
     """Visualize a mini-batch for debugging."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
+    num_channels = 5
 
     for i in xrange(im_blob.shape[0]):
         fig = plt.figure()
@@ -283,14 +287,15 @@ def _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob):
 
         # show label
         label = label_blob[i, 0, :, :]
+        gt_class = int(label.max())
         fig.add_subplot(243)
         plt.imshow(label)
 
         # show the target
         fig.add_subplot(244)
         plt.imshow(label)
-        vx = target_blob[i, 0, :, :]
-        vy = target_blob[i, 1, :, :]
+        vx = target_blob[i, gt_class*num_channels+0, :, :]
+        vy = target_blob[i, gt_class*num_channels+1, :, :]
         for x in xrange(vx.shape[1]):
             for y in xrange(vx.shape[0]):
                 if vx[y, x] != 0 or vy[y, x] != 0:
@@ -298,17 +303,17 @@ def _vis_minibatch(im_blob, im_depth_blob, label_blob, target_blob):
                         arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
         # show the azimuth sin image
-        azimuth = target_blob[i, 2, :, :]
+        azimuth = target_blob[i, gt_class*num_channels+2, :, :]
         fig.add_subplot(245)
         plt.imshow(azimuth)
 
         # show the azimuth cos image
-        azimuth = target_blob[i, 3, :, :]
+        azimuth = target_blob[i, gt_class*num_channels+3, :, :]
         fig.add_subplot(246)
         plt.imshow(azimuth)
 
         # show the elevation sin image
-        elevation = target_blob[i, 4, :, :]
+        elevation = target_blob[i, gt_class*num_channels+4, :, :]
         fig.add_subplot(247)
         plt.imshow(elevation)
         plt.show()

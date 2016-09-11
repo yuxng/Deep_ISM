@@ -4,7 +4,7 @@ function generate_image_set_index
 root = './data';
 
 % synset ids
-synsets = {'03797390'};
+synsets = {'02958343', '03001627', '03211117', '03797390', '04379243'};
 
 fid_train = fopen('train.txt', 'w');
 fid_val = fopen('val.txt', 'w');

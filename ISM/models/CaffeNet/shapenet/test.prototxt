@@ -406,7 +406,7 @@ layer {
   bottom: "rpn_conv1"
   top: "cls_score"
   convolution_param {
-    num_output: 2   # num_classes
+    num_output: 6   # num_classes
     kernel_size: 1 pad: 0 stride: 1
   }
 }
@@ -422,7 +422,7 @@ layer {
   bottom: "rpn_conv1"
   top: "center_pred"
   convolution_param {
-    num_output: 5     # voting vector
+    num_output: 30     # voting vector 5 * num_classes
     kernel_size: 1 pad: 0 stride: 1
   }
 }
