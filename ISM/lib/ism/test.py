@@ -262,8 +262,8 @@ def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_t
 
     for x in xrange(vx.shape[1]):
         for y in xrange(vx.shape[0]):
-            if vx[y, x] != 0 and vy[y, x] != 0:
-                plt.gca().annotate("", xy=(x + vx[y, x], y + vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
+            if vx[y, x] != 0 and vy[y, x] != 0 and cls_label[y, x] != 0:
+                plt.gca().annotate("", xy=(x + 2*vx[y, x], y + 2*vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
                     arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
     # show the azimuth sin image

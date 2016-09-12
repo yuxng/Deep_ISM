@@ -381,17 +381,35 @@ layer {
   }
 }
 
+layer {
+  name: "upscore"
+  type: "Deconvolution"
+  bottom: "conv5_all"
+  top: "conv5_all_upscore"
+  param {
+    lr_mult: 1
+  }
+  convolution_param {
+    num_output: 512
+    bias_term: false
+    kernel_size: 8
+    stride: 4
+    pad: 2
+    weight_filler { type: "gaussian" std: 0.01 }
+  }
+}
+
 #========= RPN ============
 
 layer {
   name: "rpn_conv1"
   type: "Convolution"
-  bottom: "conv5_all"
+  bottom: "conv5_all_upscore"
   top: "rpn_conv1"
   param { lr_mult: 1 }
   param { lr_mult: 2 }
   convolution_param {
-    num_output: 256
+    num_output: 512
     kernel_size: 3 pad: 1 stride: 1
     weight_filler { type: "gaussian" std: 0.01 }
     bias_filler { type: "constant" value: 0 }
@@ -417,6 +435,7 @@ layer {
     bias_filler { type: "constant" value: 0 }
   }
 }
+
 layer {
   name: "center_pred"
   type: "Convolution"

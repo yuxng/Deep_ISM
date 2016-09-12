@@ -236,12 +236,12 @@ def _get_label_blob(roidb, im_scales, num_classes):
     height = np.floor((image_height - 1) / 4.0 + 1)
     height = np.floor((height - 1) / 2.0 + 1 + 0.5)
     height = np.floor((height - 1) / 2.0 + 1 + 0.5)
-    height = int(height)
+    height = int(height * 4)
 
     width = np.floor((image_width - 1) / 4.0 + 1)
     width = np.floor((width - 1) / 2.0 + 1 + 0.5)
     width = np.floor((width - 1) / 2.0 + 1 + 0.5)
-    width = int(width)
+    width = int(width * 4)
 
     # rescale the blob
     blob_cls_rescale = np.zeros((num_images, 1, height, width), dtype=np.float32)
