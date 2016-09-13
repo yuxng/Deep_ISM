@@ -21,3 +21,9 @@ time ./tools/test_net.py --gpu $1 \
   --net output/shapenet/shapenet_train/caffenet_ism_shapenet_iter_40000.caffemodel \
   --imdb shapenet_val \
   --cfg experiments/cfgs/shapenet.yml
+
+#time ./tools/test_net.py --gpu $1 \
+#  --def models/CaffeNet/shapenet/test.prototxt \
+#  --net output/shapenet/shapenet_train/caffenet_ism_shapenet_iter_40000.caffemodel \
+#  --imdb rgbd_scenes_val \
+#  --cfg experiments/cfgs/shapenet.yml

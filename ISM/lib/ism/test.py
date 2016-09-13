@@ -282,23 +282,25 @@ def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_t
     ax.set_title('elevation sin pred')
 
     # show the 3D points
-    ax = fig.add_subplot(338, projection='3d')
-    ax.scatter(points_rescale[:,:,0], points_rescale[:,:,1], points_rescale[:,:,2], c='r', marker='o')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_aspect('equal')
-    ax.set_title('input point cloud')
+    if points_rescale.shape[0] > 0:
+        ax = fig.add_subplot(338, projection='3d')
+        ax.scatter(points_rescale[:,:,0], points_rescale[:,:,1], points_rescale[:,:,2], c='r', marker='o')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_aspect('equal')
+        ax.set_title('input point cloud')
 
     # show the 3D points transform
-    ax = fig.add_subplot(339, projection='3d')
-    ax.scatter(points_transform[0,:], points_transform[1,:], points_transform[2,:], c='r', marker='o')
-    ax.scatter(0, 0, 0, c='g', marker='o')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_aspect('equal')
-    ax.set_title('transformed point cloud')
+    if points_transform.shape[1] > 0:
+        ax = fig.add_subplot(339, projection='3d')
+        ax.scatter(points_transform[0,:], points_transform[1,:], points_transform[2,:], c='r', marker='o')
+        ax.scatter(0, 0, 0, c='g', marker='o')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_aspect('equal')
+        ax.set_title('transformed point cloud')
 
     plt.show()
 
@@ -350,9 +352,14 @@ def test_net(net, imdb):
               .format(i + 1, num_images, _t['im_detect'].average_time, _t['misc'].average_time)
 
         # read meta data
-        meta_data = scipy.io.loadmat(imdb.metadata_path_at(i))
+        meta_data_path = imdb.metadata_path_at(i)
         # compute object pose
-        points_rescale, points_transform = pose_estimate(im_depth, meta_data, cls_prob, center_pred)
+        if os.path.exists(meta_data_path):
+            meta_data = scipy.io.loadmat(meta_data_path)
+            points_rescale, points_transform = pose_estimate(im_depth, meta_data, cls_prob, center_pred)
+        else:
+            points_rescale = np.zeros((0, 0, 3), dtype=np.float32)
+            points_transform = np.zeros((3, 0), dtype=np.float32)
 
         vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform)
 

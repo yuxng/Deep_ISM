@@ -6,4 +6,4 @@ TRAIN:
   SNAPSHOT_ITERS: 10000
   USE_FLIPPED: False
 TEST:
-  SCALES_BASE: !!python/tuple [1.5]
+  SCALES_BASE: !!python/tuple [1.0]

@@ -10,6 +10,7 @@
 __sets = {}
 
 import datasets.shapenet
+import datasets.rgbd_scenes
 import numpy as np
 
 # shapenet dataset
@@ -18,6 +19,13 @@ for split in ['train', 'val']:
     print name
     __sets[name] = (lambda split=split:
             datasets.shapenet(split))
+
+# rgbd scenes dataset
+for split in ['val']:
+    name = 'rgbd_scenes_{}'.format(split)
+    print name
+    __sets[name] = (lambda split=split:
+            datasets.rgbd_scenes(split))
 
 def get_imdb(name):
     """Get an imdb (image database) by name."""
