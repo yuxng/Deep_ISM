@@ -222,6 +222,67 @@ def pose_estimate(im_depth, meta_data, cls_prob, center_pred):
     return points_rescale, np.array(points_transform)
 
 
+def hough_voting(cls_prob, center_pred):
+    """ compute the Hough voting space """
+    num_channels = 5
+    num_classes = cls_prob.shape[1]
+
+    height = center_pred.shape[2]
+    width = center_pred.shape[3]
+    x, y = np.meshgrid(np.arange(width), np.arange(height))
+    # construct the 2D points matrix
+    x2d = np.stack((x, y), axis=2).reshape(width*height, 2)
+
+    # for each class
+    for i in range(1, num_classes):
+        vote = np.zeros((width*height, ), dtype=np.float32)
+        x1 = np.inf * np.ones((width*height, ), dtype=np.float32)
+        y1 = np.inf * np.ones((width*height, ), dtype=np.float32)
+        x2 = -np.inf * np.ones((width*height, ), dtype=np.float32)
+        y2 = -np.inf * np.ones((width*height, ), dtype=np.float32)
+
+        vx = center_pred[:, num_channels*i+0, y, x].reshape((height, width))
+        vy = center_pred[:, num_channels*i+1, y, x].reshape((height, width))
+        # compute line norms
+        norms = np.stack((-vy, vx), axis=2).reshape(width*height, 2)
+        # for each line
+        for j in range(width*height):
+            p = x2d[j, :]
+            n = norms[j, :].transpose()
+            # compute point to line distance
+            d = np.absolute( np.dot(x2d - np.tile(p, (width*height, 1)), n)) / np.linalg.norm(n)
+            index = np.where(d < 1)[0]
+            vote[index] = vote[index] + 1
+            
+            ind = np.where(x1[index] > p[0])[0]
+            x1[index[ind]] = p[0]
+
+            ind = np.where(y1[index] > p[1])[0]
+            y1[index[ind]] = p[1]
+
+            ind = np.where(x2[index] < p[0])[0]
+            x2[index[ind]] = p[0]
+
+            ind = np.where(y2[index] < p[1])[0]
+            y2[index[ind]] = p[1]
+
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        fig.add_subplot(121)
+        plt.imshow(cls_prob[:,i,:,:].reshape((height, width)))
+        fig.add_subplot(122)
+        plt.imshow(vote.reshape((height, width)))
+
+        # draw a bounding box
+        ind = np.argmax(vote)
+        plt.gca().add_patch(
+            plt.Rectangle((x1[ind], y1[ind]), x2[ind] - x1[ind],
+                          y2[ind] - y1[ind], fill=False,
+                          edgecolor='r', linewidth=3)
+            )
+        plt.show()
+
+
 def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
@@ -350,6 +411,9 @@ def test_net(net, imdb):
 
         print 'im_detect: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(i + 1, num_images, _t['im_detect'].average_time, _t['misc'].average_time)
+
+        # Hough voting
+        # hough_voting(cls_prob, center_pred)
 
         # read meta data
         meta_data_path = imdb.metadata_path_at(i)
