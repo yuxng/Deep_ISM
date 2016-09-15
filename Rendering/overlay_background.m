@@ -9,7 +9,7 @@ files_bg = dir(fullfile(root_bg, '*.jpg'));
 num_sun = numel(files_bg);
 
 % synset id
-synset = '03797390';
+synset = '04379243';
 
 % list models
 subdirs = dir(fullfile(root, synset));

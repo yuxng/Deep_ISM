@@ -37,12 +37,15 @@ def _get_image_blob(im, im_depth):
 
     processed_ims = []
     im_scale_factors = []
-    scales = cfg.TEST.SCALES_BASE
+    assert len(cfg.TEST.SCALES_BASE) == 1
+    im_scale = cfg.TEST.SCALES_BASE[0]
 
-    for im_scale in scales:
-        im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
-        im_scale_factors.append(im_scale)
-        processed_ims.append(im)
+    im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+    im_scale_factors.append(im_scale)
+    processed_ims.append(im)
+
+    # im_info
+    im_info = np.hstack((im.shape[:2], im_scale))[np.newaxis, :]
 
     # depth
     im_orig = im_depth.astype(np.float32, copy=True)
@@ -51,15 +54,14 @@ def _get_image_blob(im, im_depth):
     im_orig -= cfg.PIXEL_MEANS
 
     processed_ims_depth = []
-    for im_scale in scales:
-        im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
-        processed_ims_depth.append(im)
+    im = cv2.resize(im_orig, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+    processed_ims_depth.append(im)
 
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims, 3)
     blob_depth = im_list_to_blob(processed_ims_depth, 3)
 
-    return blob, blob_depth, np.array(im_scale_factors)
+    return blob, blob_depth, im_info, np.array(im_scale_factors)
 
 
 def im_detect(net, im, im_depth, num_classes):
@@ -77,19 +79,24 @@ def im_detect(net, im, im_depth, num_classes):
     """
 
     # compute image blob
-    im_blob, im_depth_blob, im_scale_factors = _get_image_blob(im, im_depth)
+    im_blob, im_depth_blob, im_info, im_scale_factors = _get_image_blob(im, im_depth)
 
     # reshape network inputs
     net.blobs['data_image'].reshape(*(im_blob.shape))
     net.blobs['data_depth'].reshape(*(im_depth_blob.shape))
+    net.blobs['im_info'].reshape(*(im_info.shape))
     blobs_out = net.forward(data_image=im_blob.astype(np.float32, copy=False),
-                            data_depth=im_depth_blob.astype(np.float32, copy=False))
+                            data_depth=im_depth_blob.astype(np.float32, copy=False),
+                            im_info=im_info.astype(np.float32, copy=False))
 
     # get outputs
-    cls_prob = blobs_out['cls_prob']
-    center_pred = blobs_out['center_pred']
+    scale = im_info[0, 2]
+    boxes = blobs_out['rois'][:, 1:].copy() / scale
+    scores = blobs_out['scores'].copy()
+    seg_cls_prob = blobs_out['seg_cls_prob']
+    seg_view_pred = blobs_out['seg_view_pred']
 
-    return cls_prob, center_pred
+    return boxes, scores, seg_cls_prob, seg_view_pred
 
 
 # backproject pixels into 3D points
@@ -180,12 +187,12 @@ def pose_estimate(im_depth, meta_data, cls_prob, center_pred):
     points_rescale = cv2.resize(points, dsize=(height, width), interpolation=cv2.INTER_NEAREST)
 
     # find the max cls labels
-    num_channels = 5
+    num_channels = 3
     cls_label = np.argmax(cls_prob, axis = 1).reshape((height, width))
     x, y = np.meshgrid(np.arange(width), np.arange(height))
-    azimuth_sin_pred = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
-    azimuth_cos_pred = center_pred[:, num_channels*cls_label+3, y, x].reshape((height, width))
-    elevation_sin_pred = center_pred[:, num_channels*cls_label+4, y, x].reshape((height, width))
+    azimuth_sin_pred = center_pred[:, num_channels*cls_label+0, y, x].reshape((height, width))
+    azimuth_cos_pred = center_pred[:, num_channels*cls_label+1, y, x].reshape((height, width))
+    elevation_sin_pred = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
 
     # optimization
     # initialization
@@ -283,7 +290,7 @@ def hough_voting(cls_prob, center_pred):
         plt.show()
 
 
-def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform):
+def vis_detections(im, im_depth, boxes, scores, cls_prob, center_pred, points_rescale, points_transform):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
@@ -310,22 +317,31 @@ def vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_t
 
     # show the target
     ax = fig.add_subplot(334)
-    plt.imshow(cls_label)
-    ax.set_title('center pred')
+    plt.imshow(im)
+    for i in xrange(boxes.shape[0]):
+        roi = boxes[i, :4]
+        plt.gca().add_patch(plt.Rectangle((roi[0], roi[1]), roi[2] - roi[0],
+                      roi[3] - roi[1], fill=False,
+                      edgecolor='r', linewidth=3))
+        break
 
-    num_channels = 5
+
+    # plt.imshow(cls_label)
+    # ax.set_title('center pred')
+
+    num_channels = 3
     x, y = np.meshgrid(np.arange(width), np.arange(height))
-    vx = center_pred[:, num_channels*cls_label+0, y, x].reshape((height, width))
-    vy = center_pred[:, num_channels*cls_label+1, y, x].reshape((height, width))
-    azimuth_sin = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
-    azimuth_cos = center_pred[:, num_channels*cls_label+3, y, x].reshape((height, width))
-    elevation_sin = center_pred[:, num_channels*cls_label+4, y, x].reshape((height, width))
+    # vx = center_pred[:, num_channels*cls_label+0, y, x].reshape((height, width))
+    # vy = center_pred[:, num_channels*cls_label+1, y, x].reshape((height, width))
+    azimuth_sin = center_pred[:, num_channels*cls_label+0, y, x].reshape((height, width))
+    azimuth_cos = center_pred[:, num_channels*cls_label+1, y, x].reshape((height, width))
+    elevation_sin = center_pred[:, num_channels*cls_label+2, y, x].reshape((height, width))
 
-    for x in xrange(vx.shape[1]):
-        for y in xrange(vx.shape[0]):
-            if vx[y, x] != 0 and vy[y, x] != 0 and cls_label[y, x] != 0:
-                plt.gca().annotate("", xy=(x + 2*vx[y, x], y + 2*vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
-                    arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
+    # for x in xrange(vx.shape[1]):
+    #    for y in xrange(vx.shape[0]):
+    #        if vx[y, x] != 0 and vy[y, x] != 0 and cls_label[y, x] != 0:
+    #            plt.gca().annotate("", xy=(x + 2*vx[y, x], y + 2*vy[y, x]), xycoords='data', xytext=(x, y), textcoords='data',
+    #                arrowprops=dict(arrowstyle="->", connectionstyle="arc3"))
 
     # show the azimuth sin image
     ax = fig.add_subplot(335)
@@ -401,11 +417,11 @@ def test_net(net, imdb):
         # im = cv2.resize(im, None, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_LINEAR)
 
         _t['im_detect'].tic()
-        cls_prob, center_pred = im_detect(net, im, im_depth, imdb.num_classes)
+        boxes, scores, seg_cls_prob, seg_view_pred = im_detect(net, im, im_depth, imdb.num_classes)
         _t['im_detect'].toc()
 
         _t['misc'].tic()
-        det = {'cls_prob': cls_prob, 'center_pred': center_pred}
+        det = {'boxes': boxes, 'scores': scores, 'seg_cls_prob': seg_cls_prob, 'seg_view_pred': seg_view_pred}
         detections[i] = det
         _t['misc'].toc()
 
@@ -420,12 +436,12 @@ def test_net(net, imdb):
         # compute object pose
         if os.path.exists(meta_data_path):
             meta_data = scipy.io.loadmat(meta_data_path)
-            points_rescale, points_transform = pose_estimate(im_depth, meta_data, cls_prob, center_pred)
+            points_rescale, points_transform = pose_estimate(im_depth, meta_data, seg_cls_prob, seg_view_pred)
         else:
             points_rescale = np.zeros((0, 0, 3), dtype=np.float32)
             points_transform = np.zeros((3, 0), dtype=np.float32)
 
-        vis_detections(im, im_depth, cls_prob, center_pred, points_rescale, points_transform)
+        vis_detections(im, im_depth, boxes, scores, seg_cls_prob, seg_view_pred, points_rescale, points_transform)
 
     det_file = os.path.join(output_dir, 'detections.pkl')
     with open(det_file, 'wb') as f:

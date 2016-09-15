@@ -4,6 +4,8 @@ layer {
   type: 'Python'
   top: 'data_image'
   top: 'data_depth'
+  top: 'im_info'
+  top: 'gt_boxes'
   top: 'labels'
   top: 'targets'
   top: 'inside_weights'
@@ -381,30 +383,30 @@ layer {
   }
 }
 
-layer {
-  name: "upscore"
-  type: "Deconvolution"
-  bottom: "conv5_all"
-  top: "conv5_all_upscore"
-  param {
-    lr_mult: 1
-  }
-  convolution_param {
-    num_output: 512
-    bias_term: false
-    kernel_size: 8
-    stride: 4
-    pad: 2
-    weight_filler { type: "gaussian" std: 0.01 }
-  }
-}
+#layer {
+#  name: "upscore"
+#  type: "Deconvolution"
+#  bottom: "conv5_all"
+#  top: "conv5_all_upscore"
+#  param {
+#    lr_mult: 1
+#  }
+#  convolution_param {
+#    num_output: 512
+#    bias_term: false
+#    kernel_size: 8
+#    stride: 4
+#    pad: 2
+#    weight_filler { type: "gaussian" std: 0.01 }
+#  }
+#}
 
 #========= RPN ============
 
 layer {
   name: "rpn_conv1"
   type: "Convolution"
-  bottom: "conv5_all_upscore"
+  bottom: "conv5_all"
   top: "rpn_conv1"
   param { lr_mult: 1 }
   param { lr_mult: 2 }
@@ -422,10 +424,88 @@ layer {
   top: "rpn_conv1"
 }
 layer {
-  name: "cls_score"
+  name: "rpn_cls_score"
   type: "Convolution"
   bottom: "rpn_conv1"
-  top: "cls_score"
+  top: "rpn_cls_score"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 140   # 2(bg/fg) * 70(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+layer {
+  name: "rpn_bbox_pred"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "rpn_bbox_pred"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 280   # 4 * 70(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+layer {
+   bottom: "rpn_cls_score"
+   top: "rpn_cls_score_reshape"
+   name: "rpn_cls_score_reshape"
+   type: "Reshape"
+   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
+}
+layer {
+  name: 'rpn-data'
+  type: 'Python'
+  bottom: 'rpn_cls_score'
+  bottom: 'gt_boxes'
+  bottom: 'im_info'
+  bottom: 'data_image'
+  top: 'rpn_labels'
+  top: 'rpn_bbox_targets'
+  top: 'rpn_bbox_inside_weights'
+  top: 'rpn_bbox_outside_weights'
+  python_param {
+    module: 'rpn_msr.anchor_target_layer'
+    layer: 'AnchorTargetLayer'
+    param_str: "'feat_stride': 16"
+  }
+}
+layer {
+  name: "rpn_loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "rpn_cls_score_reshape"
+  bottom: "rpn_labels"
+  top: "rpn_cls_loss"
+  loss_weight: 1
+  loss_param {
+    ignore_label: -1
+    normalize: true
+  }
+}
+layer {
+  name: "rpn_loss_bbox"
+  type: "SmoothL1Loss"
+  bottom: "rpn_bbox_pred"
+  bottom: "rpn_bbox_targets"
+  bottom: "rpn_bbox_inside_weights"
+  bottom: "rpn_bbox_outside_weights"
+  top: "rpn_loss_bbox"
+  loss_weight: 1
+  smooth_l1_loss_param { sigma: 3.0 }
+}
+
+#========= Segmentation ============
+
+layer {
+  name: "seg_cls_score"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "seg_cls_score"
   param { lr_mult: 1.0 }
   param { lr_mult: 2.0 }
   convolution_param {
@@ -435,27 +515,26 @@ layer {
     bias_filler { type: "constant" value: 0 }
   }
 }
-
 layer {
-  name: "center_pred"
+  name: "seg_view_pred"
   type: "Convolution"
   bottom: "rpn_conv1"
-  top: "center_pred"
+  top: "seg_view_pred"
   param { lr_mult: 1.0 }
   param { lr_mult: 2.0 }
   convolution_param {
-    num_output: 30   # voting vector 5 * num_classes
+    num_output: 18   # voting vector 3 * num_classes
     kernel_size: 1 pad: 0 stride: 1
     weight_filler { type: "gaussian" std: 0.01 }
     bias_filler { type: "constant" value: 0 }
   }
 }
 layer {
-  name: "loss_cls"
+  name: "seg_loss_cls"
   type: "SoftmaxWithLoss"
-  bottom: "cls_score"
+  bottom: "seg_cls_score"
   bottom: "labels"
-  top: "cls_loss"
+  top: "seg_cls_loss"
   loss_weight: 1
   loss_param {
     ignore_label: -1
@@ -463,13 +542,13 @@ layer {
   }
 }
 layer {
-  name: "loss_center"
+  name: "seg_loss_view"
   type: "SmoothL1Loss"
-  bottom: "center_pred"
+  bottom: "seg_view_pred"
   bottom: "targets"
   bottom: "inside_weights"
   bottom: "outside_weights"
-  top: "loss_center"
+  top: "seg_loss_view"
   loss_weight: 1
   smooth_l1_loss_param { sigma: 3.0 }
 }

@@ -16,6 +16,12 @@ input_shape {
   dim: 224
 }
 
+input: "im_info"
+input_shape {
+  dim: 1
+  dim: 3
+}
+
 # RGB tower
 layer {
   name: "conv1"
@@ -382,30 +388,12 @@ layer {
   }
 }
 
-layer {
-  name: "upscore"
-  type: "Deconvolution"
-  bottom: "conv5_all"
-  top: "conv5_all_upscore"
-  param {
-    lr_mult: 1
-  }
-  convolution_param {
-    num_output: 512
-    bias_term: false
-    kernel_size: 8
-    stride: 4
-    pad: 2
-    weight_filler { type: "gaussian" std: 0.01 }
-  }
-}
-
 #========= RPN ============
 
 layer {
   name: "rpn_conv1"
   type: "Convolution"
-  bottom: "conv5_all_upscore"
+  bottom: "conv5_all"
   top: "rpn_conv1"
   convolution_param {
     num_output: 512
@@ -419,28 +407,87 @@ layer {
   top: "rpn_conv1"
 }
 layer {
-  name: "cls_score"
+  name: "rpn_cls_score"
   type: "Convolution"
   bottom: "rpn_conv1"
-  top: "cls_score"
+  top: "rpn_cls_score"
+  convolution_param {
+    num_output: 140   # 2(bg/fg) * 70(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+  }
+}
+layer {
+  name: "rpn_bbox_pred"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "rpn_bbox_pred"
+  convolution_param {
+    num_output: 280   # 4 * 70(anchors)
+    kernel_size: 1 pad: 0 stride: 1
+  }
+}
+layer {
+   bottom: "rpn_cls_score"
+   top: "rpn_cls_score_reshape"
+   name: "rpn_cls_score_reshape"
+   type: "Reshape"
+   reshape_param { shape { dim: 0 dim: 2 dim: -1 dim: 0 } }
+}
+
+#-----------------------output------------------------
+layer {
+  name: "rpn_cls_prob"
+  type: "Softmax"
+  bottom: "rpn_cls_score_reshape"
+  top: "rpn_cls_prob"
+}
+layer {
+  name: 'rpn_cls_prob_reshape'
+  type: 'Reshape'
+  bottom: 'rpn_cls_prob'
+  top: 'rpn_cls_prob_reshape'
+  reshape_param { shape { dim: 0 dim: 140 dim: -1 dim: 0 } }
+}
+layer {
+  name: 'proposal'
+  type: 'Python'
+  bottom: 'rpn_cls_prob_reshape'
+  bottom: 'rpn_bbox_pred'
+  bottom: 'im_info'
+  top: 'rois'
+  top: 'scores'
+  python_param {
+    module: 'rpn_msr.proposal_layer'
+    layer: 'ProposalLayer'
+    param_str: "'feat_stride': 16"
+  }
+}
+
+#========= Segmentation ============
+
+layer {
+  name: "seg_cls_score"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "seg_cls_score"
   convolution_param {
     num_output: 6   # num_classes
     kernel_size: 1 pad: 0 stride: 1
   }
 }
 layer {
-  name: "cls_prob"
+  name: "seg_cls_prob"
   type: "Softmax"
-  bottom: "cls_score"
-  top: "cls_prob"
+  bottom: "seg_cls_score"
+  top: "seg_cls_prob"
 }
 layer {
-  name: "center_pred"
+  name: "seg_view_pred"
   type: "Convolution"
   bottom: "rpn_conv1"
-  top: "center_pred"
+  top: "seg_view_pred"
   convolution_param {
-    num_output: 30     # voting vector 5 * num_classes
+    num_output: 18     # voting vector 3 * num_classes
     kernel_size: 1 pad: 0 stride: 1
   }
 }
