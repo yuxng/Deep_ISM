@@ -128,12 +128,14 @@ class rgbd_scenes(datasets.imdb):
         # metadata path
         metadata_path = self.metadata_path_from_index(index)
 
+        boxes = []
         gt_class = []
         
         return {'image': image_path,
                 'depth': depth_path,
                 'meta_data': metadata_path,
-                'gt_class': gt_class,
+                'boxes': boxes,
+                'gt_classes': gt_class,
                 'flipped' : False}
 
 

@@ -400,10 +400,10 @@ def test_net(net, imdb):
     # timers
     _t = {'im_detect' : Timer(), 'misc' : Timer()}
 
-    perm = np.random.permutation(np.arange(num_images))
+    # perm = np.random.permutation(np.arange(num_images))
 
-    # for i in xrange(num_images):
-    for i in perm:
+    for i in xrange(num_images):
+    # for i in perm:
         im = cv2.imread(imdb.image_path_at(i))
         im_depth = cv2.imread(imdb.depth_path_at(i), cv2.IMREAD_UNCHANGED)
 

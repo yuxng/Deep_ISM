@@ -297,6 +297,20 @@ class BlenderRenderer(object):
         If set 'SKY', render background using sky color."""
         self.render_context.alpha_mode = transparency
 
+    def makeMaterial(self, name, diffuse, specular, alpha):
+        mat = bpy.data.materials.new(name)
+        mat.diffuse_color = diffuse
+        mat.diffuse_shader = 'LAMBERT' 
+        mat.diffuse_intensity = 1.0 
+        mat.specular_color = specular
+        mat.specular_shader = 'COOKTORR'
+        mat.specular_intensity = 0.5
+        mat.alpha = alpha
+        mat.ambient = 1
+        mat.use_transparency = True
+        mat.transparency_method = 'Z_TRANSPARENCY'
+        return mat
+
     def selectModel(self):
         bpy.ops.object.select_all(action='DESELECT')
         bpy.ops.object.select_pattern(pattern="Camera")
@@ -332,6 +346,32 @@ class BlenderRenderer(object):
                 raise Exception("Loading failed: %s" % (file_path))
         except Exception:
             self.model_loaded = False
+
+        # add a transparent plane
+        V = np.zeros((0, 3), dtype=np.float32)
+        for item in bpy.data.objects:
+            if item.type == 'MESH':
+                for vertex in item.data.vertices:
+                    V = np.append(V, np.array(vertex.co).reshape((1,3)), axis = 0)
+
+        factor = 10
+        x1 = factor * np.min(V[:,0])
+        x2 = factor * np.max(V[:,0])
+        y1 = factor * np.min(V[:,1])
+        y2 = factor * np.max(V[:,1])
+        z = np.min(V[:,2])
+
+        verts = [(x1, y1, z), (x2, y1, z), (x2, y2, z), (x1, y2, z)]
+        faces = [(0, 1, 2, 3)]
+
+        mesh_data = bpy.data.meshes.new("cube_mesh_data")
+        mesh_data.from_pydata(verts, [], faces)  
+        mesh_data.update()
+        obj = bpy.data.objects.new("plane", mesh_data)  
+        bpy.context.scene.objects.link(obj)
+        obj.select = True
+        mat = self.makeMaterial('transparent', (1,1,1), (0,0,0), 0)
+        obj.data.materials.append(mat)
 
     # Build intrinsic camera parameters from Blender camera data
     def compute_intrinsic(self):
@@ -518,7 +558,7 @@ class BlenderRenderer(object):
 def main():
     '''Test function'''
 
-    synset = '04379243'
+    synset = '03211117'
     view_num = 10
 
     shapenet_root = '/var/Projects/ShapeNetCore.v1'
@@ -555,11 +595,14 @@ def main():
             os.makedirs(dirname)
 
         # sample viewpoints
-        for i in range(view_num): 
-            index = random.randint(0, len(view_params)-1)
-            azimuth = view_params[index][0]
-            elevation = view_params[index][1]
-            tilt = view_params[index][2]
+        for i in range(view_num):
+            while 1:
+                index = random.randint(0, len(view_params)-1)
+                azimuth = view_params[index][0]
+                elevation = view_params[index][1]
+                tilt = view_params[index][2]
+                if elevation > 0:
+                    break
 
             # set viewpoint
             renderer.setViewpoint(azimuth, elevation, tilt, 0.7, 25)
