@@ -8,11 +8,19 @@ for i = 1:numel(opt.scenes)
     for j = 1:numel(opt.models{i})
         model = opt.models{i}{j};
         cmd = sprintf('%s %s/%s/%s.obj', tool, opt.root, scene, model);
-        disp(cmd);
-        filename = sprintf('data/%s_%s/depth_000000.png', scene, model);
-        if exist(filename, 'file')
-            continue;
-        end
+        fprintf('%s\n', cmd);
+%         filename = sprintf('data/%s_%s/depth_000000.png', scene, model);
+%         if exist(filename, 'file')
+%             continue;
+%         end
         system(cmd);
     end
 end
+
+% index_scene = 1;
+% index_model = 2;
+
+% scene = opt.scenes{index_scene};
+% model = opt.models{index_scene}{index_model};
+% cmd = sprintf('%s %s/%s/%s.obj', tool, opt.root, scene, model);
+% system(cmd);
