@@ -237,6 +237,7 @@ class BlenderRenderer(object):
         self.model_loaded = False
         self.render_context.resolution_x = viewport_size_x
         self.render_context.resolution_y = viewport_size_y
+        self.render_context.use_antialiasing = False
         self.pngWriter = png.Writer(viewport_size_x, viewport_size_y, greyscale=True, alpha=False, bitdepth=16)
 
     def _set_lighting(self, azimuth, elevation):
@@ -309,6 +310,8 @@ class BlenderRenderer(object):
         mat.ambient = 1
         mat.use_transparency = True
         mat.transparency_method = 'Z_TRANSPARENCY'
+        mat.use_shadeless = True
+        mat.use_face_texture = False
         return mat
 
     def selectModel(self):
@@ -329,25 +332,155 @@ class BlenderRenderer(object):
         for item in bpy.data.materials:
             bpy.data.materials.remove(item)
 
-    def loadModel(self, file_path):
+    def loadModels(self, file_paths, scales, classes, filename):
         self.model_loaded = True
-        try:
-            if file_path.endswith('obj'):
-                bpy.ops.import_scene.obj(filepath=file_path)
-            elif file_path.endswith('3ds'):
-                bpy.ops.import_scene.autodesk_3ds(filepath=file_path)
-            elif file_path.endswith('dae'):
-                # Must install OpenCollada. Please read README.md for installation
-                bpy.ops.wm.collada_import(filepath=file_path)
-            else:
-                # TODO
-                # Other formats not supported yet
+        mesh = dict()
+
+        height = -np.inf
+        for i in range(len(file_paths)):
+            file_path = file_paths[i]
+            try:
+                if file_path.endswith('obj'):
+                    bpy.ops.import_scene.obj(filepath=file_path)
+                elif file_path.endswith('3ds'):
+                    bpy.ops.import_scene.autodesk_3ds(filepath=file_path)
+                elif file_path.endswith('dae'):
+                    # Must install OpenCollada. Please read README.md for installation
+                    bpy.ops.wm.collada_import(filepath=file_path)
+                else:
+                    # TODO
+                    # Other formats not supported yet
+                    self.model_loaded = False
+                    raise Exception("Loading failed: %s" % (file_path))
+
+                for item in bpy.data.objects:
+                    if item.type == 'MESH':
+                        if item.name not in mesh:
+                            mesh[item.name] = i
+                        if i == 0:
+                            for vertex in item.data.vertices:
+                                height = max(height, vertex.co[1])
+
+            except Exception:
                 self.model_loaded = False
-                raise Exception("Loading failed: %s" % (file_path))
-        except Exception:
-            self.model_loaded = False
+        self.mesh = mesh
+
+        # rescale the meshes
+        for item in bpy.data.objects:
+            if item.type == 'MESH':
+                ind = mesh[item.name]
+                for vertex in item.data.vertices:
+                    vertex.co *= scales[ind]
+
+        # move the table down
+        for item in bpy.data.objects:
+            if item.type == 'MESH':
+                ind = mesh[item.name]
+                if ind == 0:
+                    for vertex in item.data.vertices:
+                        vertex.co[1] -= height
+
+        # collect the vertices
+        num = len(file_paths)
+        vertices = []
+        for i in range(num):
+            vertices.append(np.zeros((0, 3), dtype=np.float32))
+        for item in bpy.data.objects:
+            if item.type == 'MESH':
+                ind = mesh[item.name]
+                for vertex in item.data.vertices:
+                    vertices[ind] = np.append(vertices[ind], np.array(vertex.co).reshape((1,3)), axis = 0)
+
+        # compute the boundary of objects
+        Xlim = np.zeros((num, 2), dtype=np.float32)
+        Ylim = np.zeros((num, 2), dtype=np.float32)
+        Zlim = np.zeros((num, 2), dtype=np.float32)
+        for i in range(num):
+            Xlim[i, 0] = vertices[i][:, 0].min()
+            Xlim[i, 1] = vertices[i][:, 0].max()
+            Ylim[i, 0] = vertices[i][:, 1].min()
+            Ylim[i, 1] = vertices[i][:, 1].max()
+            Zlim[i, 0] = vertices[i][:, 2].min()
+            Zlim[i, 1] = vertices[i][:, 2].max()
+
+        # sampling locations of objects
+        locations = np.zeros((num, 2), dtype=np.float32)
+        success = True
+        for i in range(1, num):
+            count = 0
+            while 1:
+                count += 1
+                lx = Xlim[0, 1] - Xlim[0, 0]
+                lz = Zlim[0, 1] - Zlim[0, 0]
+                x = Xlim[0, 0] + np.random.rand(1) * lx
+                z = Zlim[0, 0] + np.random.rand(1) * lz
+                # check if object is inside the table or not
+                a = [x-(Xlim[i,1]-Xlim[i,0])/2, z-(Zlim[i,1]-Zlim[i,0])/2, x+(Xlim[i,1]-Xlim[i,0])/2, z+(Zlim[i,1]-Zlim[i,0])/2]
+                if a[2] < Xlim[0, 1] and \
+                   a[0] > Xlim[0, 0] and \
+                   a[3] < Zlim[0, 1] and \
+                   a[1] > Zlim[0, 0]:
+                    flag = 1
+                else:
+                    flag = 0
+
+                if flag == 1:
+                    # check collision with other objects
+                    for j in range(1, i):
+                        b = [locations[j,0]-(Xlim[j,1]-Xlim[j,0])/2, locations[j,1]-(Zlim[j,1]-Zlim[j,0])/2, \
+                             locations[j,0]+(Xlim[j,1]-Xlim[j,0])/2, locations[j,1]+(Zlim[j,1]-Zlim[j,0])/2]
+                        x1 = max(a[0], b[0])
+                        y1 = max(a[1], b[1]);
+                        x2 = min(a[2], b[2]);
+                        y2 = min(a[3], b[3]);
+                        w = x2 - x1;
+                        h = y2 - y1;
+                        inter = w * h
+                        if inter > 0:
+                            flag = 0
+
+                if flag == 1:
+                    print('Sampled location for object %d' % i)
+                    break
+                else:
+                    if count > 100:
+                        print('Fail: cannot find location for object %d' % i)
+                        break
+
+            if flag == 1:
+                locations[i, 0] = x
+                locations[i, 1] = z
+            else:
+                success = False
+                break
+        
+        if success:
+            # move the meshes
+            for item in bpy.data.objects:
+                if item.type == 'MESH':
+                    ind = mesh[item.name]
+                    if ind > 0:
+                        for vertex in item.data.vertices:
+                            vertex.co[0] += locations[ind, 0]
+                            vertex.co[1] += Ylim[0, 1] - Ylim[ind, 0]
+                            vertex.co[2] += locations[ind, 1]
+
+            # save model
+            if filename:
+                for object in bpy.data.objects:
+                    if item.type == 'MESH':
+                        # select the object
+                        object.select = True
+                bpy.ops.export_scene.obj(filepath= filename, use_selection=True)
+                for object in bpy.data.objects:
+                    if item.type == 'MESH':
+                        # select the object
+                        object.select = False
+
+        return success
 
         # add a transparent plane
+        """
         V = np.zeros((0, 3), dtype=np.float32)
         for item in bpy.data.objects:
             if item.type == 'MESH':
@@ -372,6 +505,7 @@ class BlenderRenderer(object):
         obj.select = True
         mat = self.makeMaterial('transparent', (1,1,1), (0,0,0), 0)
         obj.data.materials.append(mat)
+        """
 
     # Build intrinsic camera parameters from Blender camera data
     def compute_intrinsic(self):
@@ -449,7 +583,7 @@ class BlenderRenderer(object):
         # compute the 3D points        
         width = depth.shape[1]
         height = depth.shape[0]
-        points = np.zeros((height, width, 3), dtype=np.float64)
+        points = np.zeros((height, width, 3), dtype=np.float32)
 
         # camera location
         C = self.camera.location
@@ -458,7 +592,7 @@ class BlenderRenderer(object):
 
         # construct the 2D points matrix
         x, y = np.meshgrid(np.arange(width), np.arange(height))
-        ones = np.ones((height, width), dtype=np.float64)
+        ones = np.ones((height, width), dtype=np.float32)
         x2d = np.stack((x, y, ones), axis=2).reshape(width*height, 3)
 
         # backprojection
@@ -483,6 +617,23 @@ class BlenderRenderer(object):
         points[y, x, 1] = X[2,:].reshape(height, width)
         points[y, x, 2] = X[1,:].reshape(height, width)
 
+        if 0:
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.mplot3d import Axes3D
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            perm = np.random.permutation(np.arange(height*width))
+            index = perm[:10000]
+            X = points[:,:,0].flatten()
+            Y = points[:,:,1].flatten()
+            Z = points[:,:,2].flatten()
+            ax.scatter(X[index], Y[index], Z[index], c='r', marker='o')
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            ax.set_aspect('equal')          
+            plt.show()
+
         # naive way of computing the 3D points
         #for x in range(width):
         #    for y in range(height):
@@ -503,6 +654,7 @@ class BlenderRenderer(object):
         #            points[y, x, 2] = X[1]
 
         return points
+
             
     def render(self, return_depth=True,
                image_path=os.path.join(RENDERING_PATH, 'tmp.png')):
@@ -558,21 +710,29 @@ class BlenderRenderer(object):
 def main():
     '''Test function'''
 
-    synset = '03211117'
-    view_num = 10
+    synsets = ['04379243', '02876657', '02880940', '03085013', '03211117', '03797390'] # table, bottle, bowl, keyboard, tvmonitor, mug
+    synset_scales = [1, 0.2, 0.2, 0.4, 0.4, 0.2]
+    synset_colors = [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1), (0, 1, 1)]
+    num_scene = 100
+    view_num = 100
+    delta = 2.5
 
     shapenet_root = '/var/Projects/ShapeNetCore.v1'
     view_dists_root = '/var/Projects/Deep_ISM/ObjectNet3D/view_distributions'
-    results_root = '/var/Projects/Deep_ISM/Rendering/data/' + synset
+    results_root = '/var/Projects/Deep_ISM/Rendering/data'
     if not os.path.exists(results_root):
         os.makedirs(results_root)
 
     # load 3D shape paths
-    dn = os.path.join(shapenet_root, synset)
-    model_id = [line.strip('\n') for line in open(dn + '/models.txt')]
-    file_paths = [os.path.join(dn, line, 'model.obj') for line in model_id]
+    file_paths = []
+    for i in range(len(synsets)):
+        synset = synsets[i]
+        dn = os.path.join(shapenet_root, synset)
+        model_id = [line.strip('\n') for line in open(dn + '/models.txt')]
+        file_paths.append( [os.path.join(dn, line, 'model.obj') for line in model_id] )
 
     # load viewpoint distributions
+    synset = synsets[0] # table
     filename = os.path.join(view_dists_root, g_view_distribution_files[synset])
     if not os.path.exists(filename):
         print('Failed to read view distribution files from %s for synset %s' % 
@@ -582,51 +742,134 @@ def main():
     view_params = [[float(x) for x in line.strip().split(' ')] for line in view_params]
 
     # initialize the blender render
-    renderer = BlenderRenderer(256, 256)
+    renderer = BlenderRenderer(640, 480)
 
-    # for each 3D shape
-    for ind, curr_model_id in enumerate(model_id):
-        print('Rendering model %s' % curr_model_id)
-        renderer.loadModel(file_paths[ind])
+    # for each scene
+    for k in range(num_scene):
+        paths = []
+        scales = []
+        classes = []
+
+        # create materials
+        materials = []
+        for i in range(len(synsets)):
+            materials.append(renderer.makeMaterial('transparent', synset_colors[i], (0,0,0), 1))
 
         # create output directory
-        dirname = os.path.join(results_root, curr_model_id)
+        dirname = os.path.join(results_root, '%04d' % k)
+        print(dirname)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
+        # sample objects
+        while 1:
+            # choose a table
+            model_id = file_paths[0]
+            index = random.randint(0, len(model_id)-1)
+            paths.append(model_id[index])
+            scales.append(synset_scales[0])
+            classes.append(0)
+
+            # choose the number of objects
+            num = random.randint(1, 3)
+
+            # choose objects
+            for i in range(num):
+                index = random.randint(1, len(synsets)-1)
+                model_id = file_paths[index]
+                scales.append(synset_scales[index])
+                classes.append(index)
+                index = random.randint(0, len(model_id)-1)
+                paths.append(model_id[index])
+
+            # load model
+            filename = dirname + '/model.obj'
+            success = renderer.loadModels(paths, scales, classes, filename)
+
+            if success:
+                break
+            else:
+                paths = []
+                scales = []
+                classes = []
+
         # sample viewpoints
+        viewpoints = np.zeros((view_num, 3), dtype=np.float32)
+        while 1:
+            index = random.randint(0, len(view_params)-1)
+            azimuth = view_params[index][0]
+            elevation = view_params[index][1]
+            tilt = view_params[index][2]
+            if elevation > 30 and elevation < 60:
+                break
+        viewpoints[0, 0] = azimuth
+        viewpoints[0, 1] = elevation
+        viewpoints[0, 2] = tilt
+        for i in range(1, view_num):
+            azimuth += delta + np.random.randn(1)
+            elevation += np.random.randn(1)
+            tilt += np.random.randn(1)
+            viewpoints[i, 0] = azimuth
+            viewpoints[i, 1] = elevation
+            viewpoints[i, 2] = tilt
+
+        # render rgb images
         for i in range(view_num):
-            while 1:
-                index = random.randint(0, len(view_params)-1)
-                azimuth = view_params[index][0]
-                elevation = view_params[index][1]
-                tilt = view_params[index][2]
-                if elevation > 0:
-                    break
+            azimuth = viewpoints[i, 0]
+            elevation = viewpoints[i, 1]
+            tilt = viewpoints[i, 2]
 
             # set viewpoint
-            renderer.setViewpoint(azimuth, elevation, tilt, 0.7, 25)
+            renderer.setViewpoint(azimuth, elevation, tilt, 0.6, 25)
 
             # set transparency
             renderer.setTransparency('TRANSPARENT')
 
             # rendering
-            filename = dirname + '%02d_rgba.png' % i
+            filename = dirname + '/%02d_rgba.png' % i
+            renderer.render_context.use_textures = True
             depth = renderer.render(True, filename)
 
             # save depth image
-            filename = dirname + '%02d_depth.png' % i
+            filename = dirname + '/%02d_depth.png' % i
             pngfile = open(filename, 'wb')
             renderer.pngWriter.write(pngfile, depth)
 
             # save meta data
-            filename = dirname + '%02d_meta' % i
+            filename = dirname + '/%02d_meta' % i
             renderer.save_meta_data(filename)
 
-        renderer.clearModel()
+        # assign materials to models
+        for item in bpy.data.objects:
+            if item.type == 'MESH':
+                ind = renderer.mesh[item.name]
+                mat = materials[classes[ind]]
+                if item.data.materials:
+                    for i in range(len(item.data.materials)):
+                        item.data.materials[i] = mat
+                else:
+                    item.data.materials.append(mat)
 
-        if ind >= 199:
-            break
+        # render label image
+        for i in range(view_num):
+            azimuth = viewpoints[i][0]
+            elevation = viewpoints[i][1]
+            tilt = viewpoints[i][2]
+
+            # set viewpoint
+            renderer.setViewpoint(azimuth, elevation, tilt, 0.6, 25)
+
+            # set transparency
+            renderer.setTransparency('TRANSPARENT')
+
+            # rendering
+            filename = dirname + '/%02d_label.png' % i
+            renderer.render_context.use_textures = False
+            depth = renderer.render(True, filename)
+
+
+        renderer.clearModel()
+    os.sys.exit(1)
 
 
 if __name__ == "__main__":

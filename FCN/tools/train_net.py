@@ -80,6 +80,7 @@ if __name__ == '__main__':
     print 'Output will be saved to `{:s}`'.format(output_dir)
 
     device_name = '/gpu:{:d}'.format(args.gpu_id)
+    cfg.GPU_ID = args.gpu_id
     print device_name
 
     network = get_network(args.network_name, args.pretrained_model)

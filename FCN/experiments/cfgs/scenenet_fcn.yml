@@ -5,10 +5,10 @@ TRAIN:
   GAMMA: 0.1
   STEPSIZE: 30000
   SCALES_BASE: !!python/tuple [1.0]
-  IMS_PER_BATCH: 1
+  IMS_PER_BATCH: 2
   SNAPSHOT_ITERS: 10000
   SNAPSHOT_INFIX: scenenet
   SNAPSHOT_PREFIX: vgg16_fcn
-  USE_FLIPPED: False
+  USE_FLIPPED: True
 TEST:
   SCALES_BASE: !!python/tuple [1.0]

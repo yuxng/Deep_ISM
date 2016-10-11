@@ -2,28 +2,27 @@ __author__ = 'yuxiang'
 
 import os
 import datasets
-import datasets.scenenet
+import datasets.shapenet_scene
 import datasets.imdb
 import cPickle
 import numpy as np
 import cv2
 
-class scenenet(datasets.imdb):
-    def __init__(self, image_set, scenenet_path = None):
-        datasets.imdb.__init__(self, 'scenenet_' + image_set)
+class shapenet_scene(datasets.imdb):
+    def __init__(self, image_set, shapenet_scene_path = None):
+        datasets.imdb.__init__(self, 'shapenet_scene_' + image_set)
         self._image_set = image_set
-        self._scenenet_path = self._get_default_path() if scenenet_path is None \
-                            else scenenet_path
-        self._data_path = os.path.join(self._scenenet_path, 'data')
-        self._classes = ('unknown', 'floor', 'ceiling', 'wall', 'bed', 'chair', 'furniture', 'nightstand', 'shelf', \
-                         'curtain', 'painting', 'pillow', 'door', 'window', 'table', 'sofa', 'lamp', 'vase', 'plant', 'plate')
+        self._shapenet_scene_path = self._get_default_path() if shapenet_scene_path is None \
+                            else shapenet_scene_path
+        self._data_path = os.path.join(self._shapenet_scene_path, 'data')
+        self._classes = ('__background__', 'table', 'bottle', 'bowl', 'keyboard', 'tvmonitor', 'mug')
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
         self._image_ext = '.png'
         self._image_index = self._load_image_set_index()
         self._roidb_handler = self.gt_roidb
 
-        assert os.path.exists(self._scenenet_path), \
-                'SceneNet path does not exist: {}'.format(self._scenenet_path)
+        assert os.path.exists(self._shapenet_scene_path), \
+                'shapenet_scene path does not exist: {}'.format(self._shapenet_scene_path)
         assert os.path.exists(self._data_path), \
                 'Data path does not exist: {}'.format(self._data_path)
 
@@ -39,7 +38,7 @@ class scenenet(datasets.imdb):
         Construct an image path from the image's "index" identifier.
         """
 
-        image_path = os.path.join(self._data_path, index + '_scene' + self._image_ext)
+        image_path = os.path.join(self._data_path, index + '_rgba' + self._image_ext)
         assert os.path.exists(image_path), \
                 'Path does not exist: {}'.format(image_path)
         return image_path
@@ -90,7 +89,7 @@ class scenenet(datasets.imdb):
         Construct an metadata path from the image's "index" identifier.
         """
 
-        metadata_path = os.path.join(self._data_path, index + '_pose.txt')
+        metadata_path = os.path.join(self._data_path, index + '_meta.mat')
         assert os.path.exists(metadata_path), \
                 'Path does not exist: {}'.format(metadata_path)
         return metadata_path
@@ -99,7 +98,7 @@ class scenenet(datasets.imdb):
         """
         Load the indexes listed in this dataset's image set file.
         """
-        image_set_file = os.path.join(self._scenenet_path, self._image_set + '.txt')
+        image_set_file = os.path.join(self._shapenet_scene_path, self._image_set + '.txt')
         assert os.path.exists(image_set_file), \
                 'Path does not exist: {}'.format(image_set_file)
 
@@ -111,7 +110,7 @@ class scenenet(datasets.imdb):
         """
         Return the default path where KITTI is expected to be installed.
         """
-        return os.path.join(datasets.ROOT_DIR, 'data', 'SceneNet')
+        return os.path.join(datasets.ROOT_DIR, 'data', 'ShapeNetScene')
 
 
     def gt_roidb(self):
@@ -128,7 +127,7 @@ class scenenet(datasets.imdb):
             print '{} gt roidb loaded from {}'.format(self.name, cache_file)
             return roidb
 
-        gt_roidb = [self._load_scenenet_annotation(index)
+        gt_roidb = [self._load_shapenet_scene_annotation(index)
                     for index in self.image_index]
 
         with open(cache_file, 'wb') as fid:
@@ -138,7 +137,7 @@ class scenenet(datasets.imdb):
         return gt_roidb
 
 
-    def _load_scenenet_annotation(self, index):
+    def _load_shapenet_scene_annotation(self, index):
         """
         Load class name and meta data
         """
@@ -153,21 +152,11 @@ class scenenet(datasets.imdb):
 
         # metadata path
         metadata_path = self.metadata_path_from_index(index)
-
-        # load projection matrix
-        P = np.loadtxt(metadata_path)
-        viewport = np.array([0, 0, 640, 480])
-
-        meta_data = {'projection_matrix' : P,
-                     'viewport': viewport,
-                     'factor_depth': 5000,
-                     'near_plane': 0.1,
-                     'far_plane': 1000}
         
         return {'image': image_path,
                 'depth': depth_path,
                 'label': label_path,
-                'meta_data': meta_data,
+                'meta_data': metadata_path,
                 'flipped': False}
 
 
@@ -209,6 +198,6 @@ class scenenet(datasets.imdb):
 
 
 if __name__ == '__main__':
-    d = datasets.scenenet('train')
+    d = datasets.shapenet_scene('train')
     res = d.roidb
     from IPython import embed; embed()

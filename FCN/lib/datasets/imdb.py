@@ -79,7 +79,7 @@ class imdb(object):
     def default_roidb(self):
         raise NotImplementedError
 
-    def evaluate_detections(self, all_boxes, output_dir=None):
+    def evaluate_segmentations(self, segmentations, output_dir=None):
         """
         all_boxes is a list of length number-of-classes.
         Each list element is a list of length number-of-images.
@@ -116,3 +116,7 @@ class imdb(object):
     def competition_mode(self, on):
         """Turn competition mode on or off."""
         pass
+
+    def fast_hist(self, a, b, n):
+        k = (a >= 0) & (a < n)
+        return np.bincount(n * a[k].astype(int) + b[k], minlength=n**2).reshape(n, n)

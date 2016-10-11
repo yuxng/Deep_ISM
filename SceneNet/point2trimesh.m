@@ -21,7 +21,7 @@ function [ distances, surface_points, faces2, vertices2, corresponding_vertices_
 %    Algorithm: From every query point, 
 %       - the nearest vertex
 %       - the nearest point on the edges and
-%       - the nearest point on the triangle's surfaces
+%       - the nearest point ols
 %    is calculated and the minimum distance out of these three is returned.   
 %
 %    Ver. 1.0.0
@@ -438,11 +438,11 @@ rD = bsxfun(@times,normals,D); % (#faces x 3) vector from surface to query point
 P = bsxfun(@minus,point,rD);   % (#faces x 3) nearest point on surface; can be outside triangle
 
 % find barycentric coordinates (query point as linear combination of two edges)
-r31r31 = sum((r3-r1).^2,2);    % (#faces x 1)
-r21r21 = sum((r2-r1).^2,2);    % (#faces x 1)
-r21r31 = dot(r2-r1,r3-r1,2);   % (#faces x 1)
-r31vq = dot(r3-r1,vq,2);       % (#faces x 1)
-r21vq = dot(r2-r1,vq,2);       % (#faces x 1)
+r31r31 = sum((r3-r1).^2,2);    % (#faces x 1) d11
+r21r21 = sum((r2-r1).^2,2);    % (#faces x 1) d00
+r21r31 = dot(r2-r1,r3-r1,2);   % (#faces x 1) d01
+r31vq = dot(r3-r1,vq,2);       % (#faces x 1) d21
+r21vq = dot(r2-r1,vq,2);       % (#faces x 1) d20
 
 d = r31r31.*r21r21 - r21r31.^2;               % (#faces x 1)
 bary = NaN(size(faces,1),3);                  % (#faces x 3)
