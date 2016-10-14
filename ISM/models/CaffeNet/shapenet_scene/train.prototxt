@@ -1,0 +1,449 @@
+name: "CaffeNet"
+layer {
+  name: 'data'
+  type: 'Python'
+  top: 'data_image'
+  top: 'data_depth'
+  top: 'data_label'
+  python_param {
+    module: 'gt_segmentation_layer.layer'
+    layer: 'GtSegmentationLayer'
+    param_str: "'num_classes': 7"
+  }
+}
+
+# RGB tower
+layer {
+  name: "conv1"
+  type: "Convolution"
+  bottom: "data_image"
+  top: "conv1"
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 96
+    kernel_size: 11
+    pad: 5
+    stride: 4
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "conv1"
+  top: "conv1"
+}
+layer {
+  name: "pool1"
+  type: "Pooling"
+  bottom: "conv1"
+  top: "pool1"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm1"
+  type: "LRN"
+  bottom: "pool1"
+  top: "norm1"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv2"
+  type: "Convolution"
+  bottom: "norm1"
+  top: "conv2"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 5
+    pad: 2
+    group: 2
+  }
+}
+layer {
+  name: "relu2"
+  type: "ReLU"
+  bottom: "conv2"
+  top: "conv2"
+}
+layer {
+  name: "pool2"
+  type: "Pooling"
+  bottom: "conv2"
+  top: "pool2"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm2"
+  type: "LRN"
+  bottom: "pool2"
+  top: "norm2"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv3"
+  type: "Convolution"
+  bottom: "norm2"
+  top: "conv3"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+  }
+}
+layer {
+  name: "relu3"
+  type: "ReLU"
+  bottom: "conv3"
+  top: "conv3"
+}
+layer {
+  name: "conv4"
+  type: "Convolution"
+  bottom: "conv3"
+  top: "conv4"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu4"
+  type: "ReLU"
+  bottom: "conv4"
+  top: "conv4"
+}
+layer {
+  name: "conv5"
+  type: "Convolution"
+  bottom: "conv4"
+  top: "conv5"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu5"
+  type: "ReLU"
+  bottom: "conv5"
+  top: "conv5"
+}
+
+# depth tower
+layer {
+  name: "conv1_d"
+  type: "Convolution"
+  bottom: "data_depth"
+  top: "conv1_d"
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  param {
+    lr_mult: 0
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 96
+    kernel_size: 11
+    pad: 5
+    stride: 4
+  }
+}
+layer {
+  name: "relu1"
+  type: "ReLU"
+  bottom: "conv1_d"
+  top: "conv1_d"
+}
+layer {
+  name: "pool1_d"
+  type: "Pooling"
+  bottom: "conv1_d"
+  top: "pool1_d"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm1_d"
+  type: "LRN"
+  bottom: "pool1_d"
+  top: "norm1_d"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv2_d"
+  type: "Convolution"
+  bottom: "norm1_d"
+  top: "conv2_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 5
+    pad: 2
+    group: 2
+  }
+}
+layer {
+  name: "relu2_d"
+  type: "ReLU"
+  bottom: "conv2_d"
+  top: "conv2_d"
+}
+layer {
+  name: "pool2_d"
+  type: "Pooling"
+  bottom: "conv2_d"
+  top: "pool2_d"
+  pooling_param {
+    pool: MAX
+    kernel_size: 3
+    pad: 1
+    stride: 2
+  }
+}
+layer {
+  name: "norm2_d"
+  type: "LRN"
+  bottom: "pool2_d"
+  top: "norm2_d"
+  lrn_param {
+    local_size: 5
+    alpha: 0.0001
+    beta: 0.75
+  }
+}
+layer {
+  name: "conv3_d"
+  type: "Convolution"
+  bottom: "norm2_d"
+  top: "conv3_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+  }
+}
+layer {
+  name: "relu3_d"
+  type: "ReLU"
+  bottom: "conv3_d"
+  top: "conv3_d"
+}
+layer {
+  name: "conv4_d"
+  type: "Convolution"
+  bottom: "conv3_d"
+  top: "conv4_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 384
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu4_d"
+  type: "ReLU"
+  bottom: "conv4_d"
+  top: "conv4_d"
+}
+layer {
+  name: "conv5_d"
+  type: "Convolution"
+  bottom: "conv4_d"
+  top: "conv5_d"
+  param {
+    lr_mult: 1
+    decay_mult: 1
+  }
+  param {
+    lr_mult: 2
+    decay_mult: 0
+  }
+  convolution_param {
+    num_output: 256
+    kernel_size: 3
+    pad: 1
+    group: 2
+  }
+}
+layer {
+  name: "relu5_d"
+  type: "ReLU"
+  bottom: "conv5_d"
+  top: "conv5_d"
+}
+
+# concatenate features
+layer {
+  name: "concat"
+  bottom: "conv5"
+  bottom: "conv5_d"
+  top: "conv5_concat"
+  type: "Concat"
+  concat_param {
+    axis: 1
+  }
+}
+
+layer {
+  name: "upscore"
+  type: "Deconvolution"
+  bottom: "conv5_concat"
+  top: "conv5_all"
+  param {
+    lr_mult: 1
+  }
+  convolution_param {
+    num_output: 512
+    bias_term: false
+    kernel_size: 8
+    stride: 4
+    pad: 2
+    weight_filler { type: "gaussian" std: 0.01 }
+  }
+}
+
+#========= RPN ============
+
+layer {
+  name: "rpn_conv1"
+  type: "Convolution"
+  bottom: "conv5_all"
+  top: "rpn_conv1"
+  param { lr_mult: 1 }
+  param { lr_mult: 2 }
+  convolution_param {
+    num_output: 512
+    kernel_size: 3 pad: 1 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+layer {
+  name: "rpn_relu1"
+  type: "ReLU"
+  bottom: "rpn_conv1"
+  top: "rpn_conv1"
+}
+
+#========= Segmentation ============
+
+layer {
+  name: "seg_cls_score"
+  type: "Convolution"
+  bottom: "rpn_conv1"
+  top: "seg_cls_score"
+  param { lr_mult: 1.0 }
+  param { lr_mult: 2.0 }
+  convolution_param {
+    num_output: 7   # num_classes
+    kernel_size: 1 pad: 0 stride: 1
+    weight_filler { type: "gaussian" std: 0.01 }
+    bias_filler { type: "constant" value: 0 }
+  }
+}
+layer {
+  name: "seg_loss_cls"
+  type: "SoftmaxWithLoss"
+  bottom: "seg_cls_score"
+  bottom: "data_label"
+  top: "seg_cls_loss"
+  loss_weight: 1
+  loss_param {
+    ignore_label: -1
+    normalize: true
+  }
+}

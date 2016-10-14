@@ -10,6 +10,7 @@
 __sets = {}
 
 import datasets.shapenet
+import datasets.shapenet_scene
 import datasets.rgbd_scenes
 import numpy as np
 
@@ -19,6 +20,13 @@ for split in ['train', 'val']:
     print name
     __sets[name] = (lambda split=split:
             datasets.shapenet(split))
+
+# shapenet dataset
+for split in ['train', 'val']:
+    name = 'shapenet_scene_{}'.format(split)
+    print name
+    __sets[name] = (lambda split=split:
+            datasets.shapenet_scene(split))
 
 # rgbd scenes dataset
 for split in ['val']:

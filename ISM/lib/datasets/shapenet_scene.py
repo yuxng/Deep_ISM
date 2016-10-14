@@ -16,6 +16,7 @@ class shapenet_scene(datasets.imdb):
                             else shapenet_scene_path
         self._data_path = os.path.join(self._shapenet_scene_path, 'data')
         self._classes = ('__background__', 'table', 'bottle', 'bowl', 'keyboard', 'tvmonitor', 'mug')
+        self._class_colors = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0), (1, 0, 1), (0, 1, 1)]
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
         self._image_ext = '.png'
         self._image_index = self._load_image_set_index()
@@ -157,10 +158,31 @@ class shapenet_scene(datasets.imdb):
                 'depth': depth_path,
                 'label': label_path,
                 'meta_data': metadata_path,
+                'class_colors': self._class_colors,
                 'flipped': False}
+
+    def _process_label_image(self, label_image):
+        """
+        change label image to label index
+        """
+        class_colors = self._class_colors
+        width = label_image.shape[1]
+        height = label_image.shape[0]
+        label_index = np.zeros((height, width), dtype=np.float32)
+
+        # label image is in BRG order
+        index = label_image[:,:,2] + 256*label_image[:,:,1] + 256*256*label_image[:,:,0]
+        for i in xrange(len(class_colors)):
+            color = class_colors[i]
+            ind = 255 * (color[0] + 256*color[1] + 256*256*color[2])
+            I = np.where(index == ind)
+            label_index[I] = i
+
+        return label_index
 
 
     def evaluate_segmentations(self, segmentations, output_dir):
+        print 'evaluating segmentations'
         # compute histogram
         n_cl = self.num_classes
         hist = np.zeros((n_cl, n_cl))
@@ -169,7 +191,7 @@ class shapenet_scene(datasets.imdb):
         for im_ind, index in enumerate(self.image_index):
             # read ground truth labels
             im = cv2.imread(self.label_path_from_index(index), cv2.IMREAD_UNCHANGED)
-            gt_labels = im.astype(np.float32, copy=True)
+            gt_labels = self._process_label_image(im)
 
             # predicated labels
             sg_labels = segmentations[im_ind]['labels']
