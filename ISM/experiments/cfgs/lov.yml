@@ -1,0 +1,14 @@
+EXP_DIR: lov
+INPUT: COLOR
+TRAIN:
+  SCALES_BASE: !!python/tuple [1.0]
+  IMS_PER_BATCH: 1
+  SNAPSHOT_INFIX: lov
+  SNAPSHOT_ITERS: 10000
+  USE_FLIPPED: False
+  VISUALIZE: False
+  VERTEX_REG: False
+TEST:
+  SCALES_BASE: !!python/tuple [1.0]
+  VERTEX_REG: False
+  VISUALIZE: True

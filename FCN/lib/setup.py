@@ -105,41 +105,8 @@ class custom_build_ext(build_ext):
         build_ext.build_extensions(self)
 
 ext_modules = [
-    Extension(
-        "utils.cython_bbox",
-        ["utils/bbox.pyx"],
-        extra_compile_args={'gcc': ["-Wno-cpp", "-Wno-unused-function"]},
-    ),
-    Extension(
-        "utils.cython_nms",
-        ["utils/nms.pyx"],
-        extra_compile_args={'gcc': ["-Wno-cpp", "-Wno-unused-function"]},
-    ),
-    Extension(
-        "nms.cpu_nms",
-        ["nms/cpu_nms.pyx"],
-        extra_compile_args={'gcc': ["-Wno-cpp", "-Wno-unused-function"]},
-        include_dirs = [numpy_include]
-    ),
-    Extension('nms.gpu_nms',
-        ['nms/nms_kernel.cu', 'nms/gpu_nms.pyx'],
-        library_dirs=[CUDA['lib64']],
-        libraries=['cudart'],
-        language='c++',
-        runtime_library_dirs=[CUDA['lib64']],
-        # this syntax is specific to this build system
-        # we're only going to use certain compiler args with nvcc and not with gcc
-        # the implementation of this trick is in customize_compiler() below
-        extra_compile_args={'gcc': ["-Wno-unused-function"],
-                            'nvcc': ['-arch=sm_35',
-                                     '--ptxas-options=-v',
-                                     '-c',
-                                     '--compiler-options',
-                                     "'-fPIC'"]},
-        include_dirs = [numpy_include, CUDA['include']]
-    ),
     Extension('normals.gpu_normals',
-        ['normals/compute_normals.cu', 'normals/gpu_normals.pyx'],
+        ['normals/compute_normals.cu', 'normals/gpu_normals.pyx', 'normals/cuda/convolutionSeparable.cu', 'normals/cuda/cuda_pcl_helpers.cu'],
         library_dirs=[CUDA['lib64']],
         libraries=['cudart'],
         language='c++',
@@ -153,12 +120,12 @@ ext_modules = [
                                      '-c',
                                      '--compiler-options',
                                      "'-fPIC'"]},
-        include_dirs = [numpy_include, CUDA['include'], '/usr/local/include/eigen3']
+        include_dirs = [numpy_include, CUDA['include'], './normals/include', '/usr/local/include/eigen3']
     )
 ]
 
 setup(
-    name='fast_rcnn',
+    name='fcn',
     ext_modules=ext_modules,
     # inject our custom trigger
     cmdclass={'build_ext': custom_build_ext},

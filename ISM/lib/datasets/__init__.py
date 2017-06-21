@@ -9,6 +9,7 @@ from .imdb import imdb
 from .shapenet import shapenet
 from .shapenet_scene import shapenet_scene
 from .rgbd_scenes import rgbd_scenes
+from .lov import lov
 from . import factory
 
 import os.path as osp

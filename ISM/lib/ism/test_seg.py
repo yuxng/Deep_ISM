@@ -14,7 +14,7 @@ import numpy as np
 import cv2
 import caffe
 import cPickle
-from utils.blob import im_list_to_blob
+from utils.blob import im_list_to_blob, pad_im
 import os
 import math
 import scipy.io
@@ -80,45 +80,42 @@ def im_segment(net, im, im_depth, num_classes):
 
     # reshape network inputs
     net.blobs['data_image'].reshape(*(im_blob.shape))
-    net.blobs['data_depth'].reshape(*(im_depth_blob.shape))
-    blobs_out = net.forward(data_image=im_blob.astype(np.float32, copy=False),
-                            data_depth=im_depth_blob.astype(np.float32, copy=False))
+    blobs_out = net.forward(data_image=im_blob.astype(np.float32, copy=False))
 
     # get outputs
-    cls_prob = blobs_out['seg_cls_prob']
+    cls_prob = blobs_out['prob']
     height = cls_prob.shape[2]
     width = cls_prob.shape[3]
-    cls_label = np.argmax(cls_prob, axis = 1).reshape((height, width))
-
-    # rescale labels
-    image_height = im.shape[0]
-    image_width = im.shape[1]
-    labels = cv2.resize(cls_label, dsize=(image_width, image_height), interpolation=cv2.INTER_NEAREST)
+    labels = np.argmax(cls_prob, axis = 1).reshape((height, width))
 
     return labels
 
 
-def vis_segmentations(im, im_depth, labels):
+def vis_segmentations(im, im_depth, labels, labels_gt, colors):
     """Visual debugging of detections."""
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
     fig = plt.figure()
 
     # show image
-    ax = fig.add_subplot(131)
+    ax = fig.add_subplot(221)
     im = im[:, :, (2, 1, 0)]
     plt.imshow(im)
     ax.set_title('input image')
 
     # show depth
-    ax = fig.add_subplot(132)
+    ax = fig.add_subplot(222)
     plt.imshow(im_depth)
     ax.set_title('input depth')
 
     # show class label
-    ax = fig.add_subplot(133)
+    ax = fig.add_subplot(223)
     plt.imshow(labels)
     ax.set_title('class labels')
+
+    ax = fig.add_subplot(224)
+    plt.imshow(labels_gt)
+    ax.set_title('gt class labels')
 
     plt.show()
 
@@ -144,37 +141,48 @@ def test_net(net, imdb):
     # timers
     _t = {'im_segment' : Timer(), 'misc' : Timer()}
 
-    # perm = np.random.permutation(np.arange(num_images))
+    if cfg.TEST.VISUALIZE:
+        perm = np.random.permutation(np.arange(num_images))
+    else:
+        perm = xrange(num_images)
 
-    for i in xrange(num_images):
-    # for i in perm:
-        rgba = cv2.imread(imdb.image_path_at(i), cv2.IMREAD_UNCHANGED)
-        im = rgba[:,:,:3]
-        alpha = rgba[:,:,3]
-        I = np.where(alpha == 0)
-        im[I[0], I[1], :] = 255
+    for i in perm:
+        # read color image
+        rgba = pad_im(cv2.imread(imdb.image_path_at(i), cv2.IMREAD_UNCHANGED), 16)
+        if rgba.shape[2] == 4:
+            im = np.copy(rgba[:,:,:3])
+            alpha = rgba[:,:,3]
+            I = np.where(alpha == 0)
+            im[I[0], I[1], :] = 255
+        else:
+            im = rgba
 
+        # read depth image
         im_depth = cv2.imread(imdb.depth_path_at(i), cv2.IMREAD_UNCHANGED)
-
-        # shift
-        # rows = im.shape[0]
-        # cols = im.shape[1]
-        # M = np.float32([[1,0,50],[0,1,25]])
-        # im = cv2.warpAffine(im,M,(cols,rows))
-
-        # rescaling
-        # im = cv2.resize(im, None, None, fx=0.6, fy=0.6, interpolation=cv2.INTER_LINEAR)
 
         _t['im_segment'].tic()
         labels = im_segment(net, im, im_depth, imdb.num_classes)
         _t['im_segment'].toc()
+
+        # build the label image
+        im_label = imdb.labels_to_image(im, labels)
 
         _t['misc'].tic()
         seg = {'labels': labels}
         segmentations[i] = seg
         _t['misc'].toc()
 
-        # vis_segmentations(im, im_depth, labels)
+        # read label image
+        labels_gt = pad_im(cv2.imread(imdb.label_path_at(i), cv2.IMREAD_UNCHANGED), 16)
+        if len(labels_gt.shape) == 2:
+            im_label_gt = imdb.labels_to_image(im, labels_gt)
+        else:
+            im_label_gt = np.copy(labels_gt[:,:,:3])
+            im_label_gt[:,:,0] = labels_gt[:,:,2]
+            im_label_gt[:,:,2] = labels_gt[:,:,0]
+
+        if cfg.TEST.VISUALIZE:
+            vis_segmentations(im, im_depth, im_label, im_label_gt, imdb._class_colors)
         print 'im_segment: {:d}/{:d} {:.3f}s {:.3f}s' \
               .format(i + 1, num_images, _t['im_segment'].average_time, _t['misc'].average_time)
 

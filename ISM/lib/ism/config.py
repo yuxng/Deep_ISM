@@ -29,11 +29,13 @@ __C = edict()
 cfg = __C
 
 # region proposal network (RPN) or not
-__C.IS_RPN = False;
+__C.IS_RPN = False
+__C.FLIP_X = False
+__C.INPUT = 'COLOR'
 
 # multiscale training and testing
-__C.IS_MULTISCALE = True;
-__C.IS_EXTRAPOLATING = True;
+__C.IS_MULTISCALE = True
+__C.IS_EXTRAPOLATING = True
 
 #
 __C.REGION_PROPOSAL = 'RPN'
@@ -46,6 +48,11 @@ __C.SUBCLS_NAME = 'voxel_exemplars'
 #
 
 __C.TRAIN = edict()
+
+__C.TRAIN.VISUALIZE = False
+__C.TRAIN.VERTEX_REG = False
+__C.TRAIN.GRID_SIZE = 256
+__C.TRAIN.CHROMATIC = False
 
 # Scales to compute real features
 __C.TRAIN.SCALES_BASE = (0.25, 0.5, 1.0, 2.0, 3.0)
@@ -145,6 +152,8 @@ __C.TRAIN.RPN_SCALES = [2, 2.82842712, 4, 5.65685425, 8, 11.3137085, 16, 22.6274
 __C.TEST = edict()
 
 __C.TEST.IS_PATCH = False;
+__C.TEST.VERTEX_REG = False
+__C.TEST.VISUALIZE = False
 
 # Scales to compute real features
 __C.TEST.SCALES_BASE = (0.25, 0.5, 1.0, 2.0, 3.0)

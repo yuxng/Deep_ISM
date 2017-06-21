@@ -67,6 +67,11 @@ class SolverWrapper(object):
         label = tf.placeholder(tf.int32, shape=[None, None, None])
         loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(cls_score, label))
 
+        # add summary
+        tf.summary.scalar('loss', loss)
+        merged = tf.summary.merge_all()
+        train_writer = tf.summary.FileWriter(self.output_dir, sess.graph)
+
         # optimizer
         lr = tf.Variable(cfg.TRAIN.LEARNING_RATE, trainable=False)
         momentum = cfg.TRAIN.MOMENTUM
@@ -91,11 +96,12 @@ class SolverWrapper(object):
             feed_dict={self.net.data: blobs['data_depth'], label: blobs['labels']}
             
             timer.tic()
-            loss_cls_value, _ = sess.run([loss, train_op], feed_dict=feed_dict)
+            summary, loss_cls_value, _ = sess.run([merged, loss, train_op], feed_dict=feed_dict)
+            train_writer.add_summary(summary, iter)
             timer.toc()
 
-            print 'iter: %d / %d, loss_cls: %.4f, lr: %f' %\
-                    (iter+1, max_iters, loss_cls_value, lr.eval())
+            print 'iter: %d / %d, loss_cls: %.4f, lr: %.8f, time: %.2f' %\
+                    (iter+1, max_iters, loss_cls_value, lr.eval(), timer.diff)
 
             if (iter+1) % (10 * cfg.TRAIN.DISPLAY) == 0:
                 print 'speed: {:.3f}s / iter'.format(timer.average_time)

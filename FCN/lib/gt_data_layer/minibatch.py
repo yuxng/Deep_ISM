@@ -17,9 +17,9 @@ from utils.backprojection import backproject
 def get_minibatch(roidb, num_classes):
     """Given a roidb, construct a minibatch sampled from it."""
     num_images = len(roidb)
-    assert(cfg.TRAIN.BATCH_SIZE % num_images == 0), \
-        'num_images ({}) must divide BATCH_SIZE ({})'. \
-        format(num_images, cfg.TRAIN.BATCH_SIZE)
+    #assert(cfg.TRAIN.BATCH_SIZE % num_images == 0), \
+    #    'num_images ({}) must divide BATCH_SIZE ({})'. \
+    #    format(num_images, cfg.TRAIN.BATCH_SIZE)
 
     # Get the input image blob, formatted for caffe
     random_scale_ind = npr.randint(0, high=len(cfg.TRAIN.SCALES_BASE))
@@ -29,7 +29,7 @@ def get_minibatch(roidb, num_classes):
     label_blob = _get_label_blob(roidb, im_scales)
 
     # For debug visualizations
-    _vis_minibatch(im_blob, im_depth_blob, label_blob)
+    #_vis_minibatch(im_blob, im_depth_blob, label_blob)
 
     blobs = {'data_image': im_blob,
              'data_depth': im_depth_blob,
